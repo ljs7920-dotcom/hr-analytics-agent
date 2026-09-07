@@ -1,43 +1,31 @@
-import AdmZip from "adm-zip";
-import { parseStringPromise } from "xml2js";
+import corpCodes from "@/data/corp-codes.json";
 
 const DART_KEY = process.env.OPENDART_API_KEY!;
 
-type CorpCodeEntry = { corp_name: string; corp_code: string };
+type CorpCodeEntry = { corp_name: string; corp_code: string; stock_code: string };
 
-// 기업명 -> 고유번호(corp_code) 매핑 목록은 매번 새로 받으면 느리므로
-// 서버가 살아있는 동안(warm instance) 메모리에 캐시해둡니다.
-let corpCodeCache: CorpCodeEntry[] | null = null;
+const list = corpCodes as CorpCodeEntry[];
 
-async function loadCorpCodes(): Promise<CorpCodeEntry[]> {
-  if (corpCodeCache) return corpCodeCache;
-
-  const res = await fetch(
-    `https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key=${DART_KEY}`
-  );
-  if (!res.ok) throw new Error("OpenDART 기업코드 목록을 받아오지 못했습니다.");
-
-  const buffer = Buffer.from(await res.arrayBuffer());
-  const zip = new AdmZip(buffer);
-  const xml = zip.readAsText("CORPCODE.xml");
-  const parsed = await parseStringPromise(xml);
-
-  const list: CorpCodeEntry[] = parsed.result.list.map((item: any) => ({
-    corp_name: item.corp_name[0],
-    corp_code: item.corp_code[0],
-  }));
-
-  corpCodeCache = list;
-  return list;
-}
-
-export async function findCorpCode(name: string): Promise<string> {
-  const list = await loadCorpCodes();
+export function findCorpCode(name: string): string {
   const exact = list.find((c) => c.corp_name === name);
   const partial = list.find((c) => c.corp_name.includes(name));
   const found = exact || partial;
-  if (!found) throw new Error(`'${name}' 이라는 이름의 기업을 찾을 수 없습니다.`);
+  if (!found) {
+    throw new Error(
+      `'${name}' 이라는 이름의 상장회사를 찾을 수 없습니다. 정확한 회사명을 확인해주세요.`
+    );
+  }
   return found.corp_code;
+}
+
+// 자동완성용: 입력한 글자가 포함된 회사명을 최대 10개까지 찾아줍니다.
+export function searchCorpNames(query: string): string[] {
+  if (!query || query.trim().length === 0) return [];
+  const q = query.trim();
+  return list
+    .filter((c) => c.corp_name.includes(q))
+    .slice(0, 10)
+    .map((c) => c.corp_name);
 }
 
 async function dartGet(path: string, params: Record<string, string>) {

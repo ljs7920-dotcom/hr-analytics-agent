@@ -6,6 +6,7 @@ type ChatMsg = { role: "user" | "assistant"; content: string };
 
 export default function Home() {
   const [corpName, setCorpName] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [year, setYear] = useState("2024");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -13,6 +14,22 @@ export default function Home() {
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [question, setQuestion] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+
+  async function handleCorpNameChange(value: string) {
+    setCorpName(value);
+    if (value.trim().length === 0) {
+      setSuggestions([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/companies?q=${encodeURIComponent(value)}`);
+      const data = await res.json();
+      setSuggestions(data.names || []);
+    } catch {
+      // 자동완성은 실패해도 분석 기능 자체엔 영향 없도록 조용히 무시합니다.
+      setSuggestions([]);
+    }
+  }
 
   async function runAnalysis() {
     setLoading(true);
@@ -65,9 +82,16 @@ export default function Home() {
         <input
           placeholder="기업명 (예: 삼성전자)"
           value={corpName}
-          onChange={(e) => setCorpName(e.target.value)}
+          onChange={(e) => handleCorpNameChange(e.target.value)}
+          list="corp-name-suggestions"
+          autoComplete="off"
           style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
         />
+        <datalist id="corp-name-suggestions">
+          {suggestions.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
         <input
           placeholder="연도 (예: 2024)"
           value={year}

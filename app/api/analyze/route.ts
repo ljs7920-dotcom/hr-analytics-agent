@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "기업명과 연도를 모두 입력하세요." }, { status: 400 });
     }
 
-    const corpCode = await findCorpCode(corpName);
+    const corpCode = findCorpCode(corpName);
 
     const [employee, execComp, financials] = await Promise.all([
       getEmployeeStatus(corpCode, year),
