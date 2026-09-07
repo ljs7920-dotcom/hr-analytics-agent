@@ -124,6 +124,11 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setResult(data);
+      if (data.debugEmployeeRawSample) {
+        // 근속연수/급여가 안 나올 때 원인을 찾기 위한 임시 디버깅용 출력입니다.
+        // 브라우저에서 F12(개발자도구) → Console 탭에서 이 내용을 확인할 수 있습니다.
+        console.log("[디버깅] 직원현황 원본 데이터 한 줄:", data.debugEmployeeRawSample);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -290,53 +295,75 @@ export default function Home() {
                     position: "sticky",
                     left: 0,
                     background: "#fff",
+                    borderBottom: "1px solid #ddd",
                   }}
                 >
                   지표
                 </th>
                 {years.map((y) => (
-                  <th key={y} style={{ textAlign: "right", padding: "4px 0", color: "#888", fontWeight: 400, fontSize: 11, whiteSpace: "nowrap" }}>
+                  <th
+                    key={y}
+                    style={{
+                      textAlign: "right",
+                      padding: "4px 0",
+                      color: "#888",
+                      fontWeight: 400,
+                      fontSize: 11,
+                      whiteSpace: "nowrap",
+                      borderBottom: "1px solid #ddd",
+                    }}
+                  >
                     {y}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {metricNames.map((name) => (
-                <tr key={name}>
-                  <td
-                    style={{
-                      padding: "4px 6px 4px 0",
-                      color: "#666",
-                      position: "sticky",
-                      left: 0,
-                      background: "#fff",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {name}
-                  </td>
-                  {years.map((y) => {
-                    const v = result.metricsByYear[y][name];
-                    return (
-                      <td
-                        key={y}
-                        title={v ? `정확한 값: ${v.exact}` : undefined}
-                        style={{
-                          padding: "4px 0",
-                          fontWeight: 600,
-                          textAlign: "right",
-                          whiteSpace: "nowrap",
-                          cursor: v ? "help" : "default",
-                          borderBottom: v ? "1px dotted #bbb" : undefined,
-                        }}
-                      >
-                        {v === null ? "-" : v.display}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {metricNames.map((name) => {
+                const isAccountNameRow = name === "매출액 산출 근거 계정명";
+                return (
+                  <tr key={name}>
+                    <td
+                      style={{
+                        padding: "4px 6px 4px 0",
+                        color: "#666",
+                        position: "sticky",
+                        left: 0,
+                        background: "#fff",
+                        whiteSpace: "nowrap",
+                        borderBottom: "1px solid #eee",
+                        fontStyle: isAccountNameRow ? "italic" : "normal",
+                      }}
+                    >
+                      {name}
+                    </td>
+                    {years.map((y) => {
+                      const v = result.metricsByYear[y][name];
+                      return (
+                        <td
+                          key={y}
+                          title={v ? `정확한 값: ${v.exact}` : undefined}
+                          style={{
+                            padding: "4px 0",
+                            fontWeight: isAccountNameRow ? 400 : 600,
+                            fontStyle: isAccountNameRow ? "italic" : "normal",
+                            color: isAccountNameRow ? "#888" : "#111",
+                            fontSize: isAccountNameRow ? 12 : 13,
+                            textAlign: "right",
+                            whiteSpace: "nowrap",
+                            cursor: v ? "help" : "default",
+                            borderBottom: "1px solid #eee",
+                            textDecoration: v ? "underline dotted" : "none",
+                            textUnderlineOffset: "3px",
+                          }}
+                        >
+                          {v === null ? "-" : v.display}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           </div>
