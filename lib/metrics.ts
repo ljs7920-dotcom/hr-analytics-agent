@@ -46,10 +46,28 @@ function formatWonCompact(n: number | null): string | null {
 }
 
 // 원 단위 금액은 {display: 요약형, exact: 정확한 숫자} 쌍으로 반환합니다.
-// 화면에는 display를 보여주고, 마우스를 올리면(hover) exact가 툴팁으로 뜨고,
-// 엑셀로 복사할 때는 exact(정확한 숫자)가 복사됩니다.
 function formatWon(n: number | null): Metric {
   return metricValue(formatWonCompact(n), formatWonExact(n));
+}
+
+// 매출액처럼 워낙 큰 금액은 "만원" 단위까지 보여주면 오히려 지저분해 보여서,
+// "조/억원" 단위까지만 반올림해서 보여줍니다. (정확한 값은 hover/엑셀에서 그대로 확인 가능)
+function formatWonCompactEokOnly(n: number | null): string | null {
+  if (n === null) return null;
+  const isNeg = n < 0;
+  const eokTotal = Math.round(Math.abs(n) / 1_0000_0000); // 억 단위로 반올림
+  const jo = Math.floor(eokTotal / 10000);
+  const eok = eokTotal % 10000;
+
+  const parts: string[] = [];
+  if (jo) parts.push(`${jo.toLocaleString("ko-KR")}조`);
+  parts.push(`${eok.toLocaleString("ko-KR")}억`);
+
+  return (isNeg ? "-" : "") + parts.join(" ") + "원";
+}
+
+function formatWonEokOnly(n: number | null): Metric {
+  return metricValue(formatWonCompactEokOnly(n), formatWonExact(n));
 }
 
 // 명/% 등 이미 짧은 값은 display와 exact가 같습니다.
@@ -63,22 +81,78 @@ function normalizeLabel(s: any): string {
   return String(s || "").replace(/\s+/g, "");
 }
 
-// OpenDART 직원현황(empSttus) 응답에는 "DX", "DS" 같은 부서별 소계 행과 회사 전체 합계 행이 섞여서 옵니다.
-// "합계"라는 글자가 정확히 적힌 행을 우선 찾고, 그게 없는 연도(표기 방식이 다른 경우)를 위해
-// "급여총액이 실제로 채워져 있는 행"을 2차 기준으로 씁니다 — 부서별 행은 개인정보 보호를 위해
-// 보통 급여 항목을 "-"로 비워두고, 회사 전체 합계 행에만 실제 숫자가 들어있기 때문입니다.
-function pickEmployeeTotalRow(employee: any[]): any | null {
+type EmployeeAggregate = {
+  totalEmployees: number | null;
+  regularCount: number | null;
+  contractCount: number | null;
+  totalSalaryWon: number | null; // 원 단위로 이미 환산됨
+  avgSalaryFieldWon: number | null; // 원 단위로 이미 환산됨 (공시에 직접 나온 1인평균급여)
+  avgTenure: string | null; // "12.5" 같은 문자열
+};
+
+// 여러 행(부서/성별)을 하나로 합칠 때 쓰는 함수.
+// 인원수, 급여총액은 단순 합산하면 되지만, 근속연수·1인평균급여처럼 "평균"인 값은
+// 그냥 더하면 틀리기 때문에 인원수(sm)로 가중평균을 냅니다.
+function aggregateRows(rows: any[]): EmployeeAggregate {
+  const totalEmployees = rows.reduce((s, e) => s + toNumber(e.sm), 0) || null;
+  const regularCount = rows.reduce((s, e) => s + toNumber(e.rgllbr_co), 0) || null;
+  const contractCount = rows.reduce((s, e) => s + toNumber(e.cnttk_co), 0) || null;
+  const salarySumManwon = rows.reduce((s, e) => s + toNumber(e.fyer_salary_totamt), 0);
+  const totalSalaryWon = salarySumManwon ? salarySumManwon * 1_000_000 : null;
+
+  let tenureNum = 0;
+  let tenureDen = 0;
+  let salaryFieldNum = 0;
+  let salaryFieldDen = 0;
+  for (const e of rows) {
+    const w = toNumber(e.sm);
+    const tenure = parseFloat(String(e.avrg_cnwk_sdytrn || "").trim());
+    if (!isNaN(tenure) && w) {
+      tenureNum += tenure * w;
+      tenureDen += w;
+    }
+    const salaryAvg = toNumber(e.jan_salary_am);
+    if (salaryAvg && w) {
+      salaryFieldNum += salaryAvg * w;
+      salaryFieldDen += w;
+    }
+  }
+  const avgTenure = tenureDen ? (tenureNum / tenureDen).toFixed(1) : null;
+  const avgSalaryFieldWon = salaryFieldDen ? Math.round(salaryFieldNum / salaryFieldDen) * 1_000_000 : null;
+
+  return { totalEmployees, regularCount, contractCount, totalSalaryWon, avgSalaryFieldWon, avgTenure };
+}
+
+function aggregateSingleRow(row: any): EmployeeAggregate {
+  return {
+    totalEmployees: toNumber(row.sm) || null,
+    regularCount: toNumber(row.rgllbr_co) || null,
+    contractCount: toNumber(row.cnttk_co) || null,
+    totalSalaryWon: toNumber(row.fyer_salary_totamt) * 1_000_000 || null,
+    avgSalaryFieldWon: toNumber(row.jan_salary_am) * 1_000_000 || null,
+    avgTenure: row.avrg_cnwk_sdytrn ? String(row.avrg_cnwk_sdytrn).trim() : null,
+  };
+}
+
+// OpenDART 직원현황(empSttus) 응답 구조는 연도/회사마다 조금씩 다릅니다:
+// - "합계"라는 글자가 정확히 적힌 행이 있는 경우 → 그 행 하나를 그대로 씁니다.
+// - "합계" 행 없이 "성별합계"(남/여 각각의 전체 소계) 행만 있는 경우 → 그 두 행을 더합니다.
+//   (부서별 개별 행만 더하면 "성별합계"와 중복 집계될 수 있어, 성별합계가 있으면 그것만 씁니다.)
+// - 행이 1개뿐인 경우 → 그 행을 그대로 씁니다.
+// - 위 경우가 다 아니면 → "합계"라는 글자가 들어간 소계로 보이는 행은 제외하고 나머지를 더합니다.
+function pickEmployeeAggregate(employee: any[]): EmployeeAggregate | null {
+  if (employee.length === 0) return null;
+
   const byLabel = employee.find((e) => normalizeLabel(e.fo_bbm) === "합계");
-  if (byLabel) return byLabel;
+  if (byLabel) return aggregateSingleRow(byLabel);
 
-  const bySalaryPresence = employee.find((e) => {
-    const salary = String(e.fyer_salary_totamt || "").trim();
-    return salary !== "" && salary !== "-";
-  });
-  if (bySalaryPresence) return bySalaryPresence;
+  const genderTotalRows = employee.filter((e) => normalizeLabel(e.fo_bbm) === "성별합계");
+  if (genderTotalRows.length > 0) return aggregateRows(genderTotalRows);
 
-  if (employee.length === 1) return employee[0];
-  return null;
+  if (employee.length === 1) return aggregateSingleRow(employee[0]);
+
+  const rows = employee.filter((e) => !normalizeLabel(e.fo_bbm).includes("합계"));
+  return aggregateRows(rows);
 }
 
 // 회사/연도에 따라 "매출액"이 아니라 "수익(매출액)", 금융/보험사는 "영업수익"으로 표기되기도 합니다.
@@ -99,36 +173,17 @@ export function computeMetrics(
   execComp: any[],
   financials: any[]
 ) {
-  const empTotal = pickEmployeeTotalRow(employee);
+  const agg = pickEmployeeAggregate(employee);
 
-  let totalEmployees: number | null = null;
-  let regularCount: number | null = null;
-  let contractCount: number | null = null;
-  let avgTenure: string | null = null;
-  let totalSalaryWon: number | null = null;
-  let avgSalaryFieldWon: number | null = null;
-
-  if (empTotal) {
-    totalEmployees = toNumber(empTotal.sm) || null;
-    regularCount = toNumber(empTotal.rgllbr_co) || null; // 기간의 정함이 없는 근로자(정규직)
-    contractCount = toNumber(empTotal.cnttk_co) || null; // 기간제근로자
-    avgTenure = empTotal.avrg_cnwk_sdytrn ? String(empTotal.avrg_cnwk_sdytrn).trim() : null;
-    // 연간급여총액/1인평균급여액은 OpenDART에서 "백만원" 단위로 내려오므로 100만을 곱해 원 단위로 바꿉니다.
-    totalSalaryWon = toNumber(empTotal.fyer_salary_totamt) * 1_000_000 || null;
-    avgSalaryFieldWon = toNumber(empTotal.jan_salary_am) * 1_000_000 || null;
-  } else if (employee.length > 1) {
-    // "합계" 행을 못 찾은 경우의 최후 수단: 소계로 보이는("합계"라는 글자가 들어간) 행은 빼고
-    // 나머지 부서/성별 행만 더합니다. (평균근속연수는 단순 평균이 부정확할 수 있어 생략합니다.)
-    const rows = employee.filter((e) => !normalizeLabel(e.fo_bbm).includes("합계"));
-    totalEmployees = rows.reduce((sum, e) => sum + toNumber(e.sm), 0) || null;
-    regularCount = rows.reduce((sum, e) => sum + toNumber(e.rgllbr_co), 0) || null;
-    contractCount = rows.reduce((sum, e) => sum + toNumber(e.cnttk_co), 0) || null;
-    const summedSalary = rows.reduce((sum, e) => sum + toNumber(e.fyer_salary_totamt), 0);
-    totalSalaryWon = summedSalary ? summedSalary * 1_000_000 : null;
-  }
+  const totalEmployees = agg?.totalEmployees ?? null;
+  const regularCount = agg?.regularCount ?? null;
+  const contractCount = agg?.contractCount ?? null;
+  const avgTenure = agg?.avgTenure ?? null;
+  const totalSalaryWon = agg?.totalSalaryWon ?? null;
 
   const avgSalaryWon =
-    avgSalaryFieldWon || (totalEmployees && totalSalaryWon ? Math.round(totalSalaryWon / totalEmployees) : null);
+    agg?.avgSalaryFieldWon ||
+    (totalEmployees && totalSalaryWon ? Math.round(totalSalaryWon / totalEmployees) : null);
 
   const revenueItem = findRevenueItem(financials);
   const revenue = revenueItem ? toNumber(revenueItem.thstrm_amount) : null;
@@ -154,7 +209,7 @@ export function computeMetrics(
     평균근속연수: formatSimple(avgTenure ? `${avgTenure}년` : null),
     "1인평균급여": formatWon(avgSalaryWon),
     연간급여총액: formatWon(totalSalaryWon),
-    매출액: formatWon(revenue),
+    매출액: formatWonEokOnly(revenue),
     "매출액 산출 근거 계정명": formatSimple(revenueAccountName),
     "인건비/매출 비중": formatSimple(laborCostRatio === null ? null : `${laborCostRatio}%`),
     등기임원보수총액: formatWon(execTotalComp || null),
