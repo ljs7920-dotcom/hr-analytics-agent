@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     const { messages, context } = await req.json();
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.5-flash-lite",
       contents: toGeminiContents(messages),
       config: {
         systemInstruction:

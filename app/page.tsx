@@ -111,7 +111,16 @@ export default function Home() {
         body: JSON.stringify({ messages: newHistory, context: result }),
       });
       const data = await res.json();
+      if (!res.ok || !data.reply) {
+        setChat([
+          ...newHistory,
+          { role: "assistant", content: `(오류) ${data.error || "답변을 받지 못했습니다."}` },
+        ]);
+        return;
+      }
       setChat([...newHistory, { role: "assistant", content: data.reply }]);
+    } catch (e: any) {
+      setChat([...newHistory, { role: "assistant", content: `(오류) ${e.message}` }]);
     } finally {
       setChatLoading(false);
     }
@@ -222,6 +231,22 @@ export default function Home() {
             </tbody>
           </table>
           <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{result.analysis}</p>
+          {result.reportUrl && (
+            <a
+              href={result.reportUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-block",
+                marginTop: 8,
+                fontSize: 13,
+                color: "#0b5fa3",
+                textDecoration: "underline",
+              }}
+            >
+              DART 공시 원문 보러가기 ↗
+            </a>
+          )}
         </div>
       )}
 

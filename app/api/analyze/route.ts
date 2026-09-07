@@ -30,8 +30,14 @@ export async function POST(req: NextRequest) {
 
     const metrics = computeMetrics(employee, execComp, financials);
 
+    // 이 공시 원문의 접수번호(rcept_no)를 찾아서 DART 원문 페이지 링크를 만듭니다.
+    // 직원현황/재무제표/임원보수 중 데이터가 있는 곳 아무 데서나 가져오면 됩니다.
+    const rceptNo =
+      employee[0]?.rcept_no || financials[0]?.rcept_no || execComp[0]?.rcept_no || null;
+    const reportUrl = rceptNo ? `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rceptNo}` : null;
+
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.5-flash-lite",
       contents:
         `다음은 ${corpName}의 ${year}년 ${reportLabel} 기준 인력·보상·재무 지표입니다:\n\n` +
         JSON.stringify(metrics, null, 2) +
@@ -42,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     const analysis = response.text ?? "";
 
-    return NextResponse.json({ corpName, year, reprtCode, reportLabel, metrics, analysis });
+    return NextResponse.json({ corpName, year, reprtCode, reportLabel, metrics, analysis, reportUrl });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "알 수 없는 오류" }, { status: 500 });
   }
