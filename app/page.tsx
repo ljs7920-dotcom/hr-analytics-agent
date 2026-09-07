@@ -69,7 +69,7 @@ export default function Home() {
       name,
       ...years.map((y) => {
         const v = result.metricsByYear[y][name];
-        return v === null ? "-" : String(v);
+        return v === null ? "-" : v.exact;
       }),
     ]);
 
@@ -235,8 +235,8 @@ export default function Home() {
       {result && (
         <div style={{ background: "#fff", padding: 20, borderRadius: 12, marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 style={{ margin: 0 }}>
-              {result.corpName} · {years.join("~")}년 · {result.reportLabel}
+            <h3 style={{ margin: 0, fontSize: 16 }}>
+              {result.corpName} · {years.length > 1 ? `${years[0]}~${years[years.length - 1]}` : years[0]}년 · {result.reportLabel}
             </h3>
             <button
               onClick={copyMetricsForExcel}
@@ -253,13 +253,14 @@ export default function Home() {
             </button>
           </div>
 
-          <table style={{ width: "100%", borderCollapse: "collapse", margin: "12px 0" }}>
+          <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", margin: "12px 0", fontSize: 13 }}>
             <thead>
               <tr>
-                <th style={{ textAlign: "left", padding: "4px 0", color: "#888", fontWeight: 400, fontSize: 12 }}>지표</th>
+                <th style={{ textAlign: "left", padding: "4px 6px 4px 0", color: "#888", fontWeight: 400, fontSize: 11 }}>지표</th>
                 {years.map((y) => (
-                  <th key={y} style={{ textAlign: "right", padding: "4px 0", color: "#888", fontWeight: 400, fontSize: 12 }}>
-                    {y}년
+                  <th key={y} style={{ textAlign: "right", padding: "4px 0", color: "#888", fontWeight: 400, fontSize: 11, whiteSpace: "nowrap" }}>
+                    {y}
                   </th>
                 ))}
               </tr>
@@ -267,12 +268,23 @@ export default function Home() {
             <tbody>
               {metricNames.map((name) => (
                 <tr key={name}>
-                  <td style={{ padding: "4px 0", color: "#666" }}>{name}</td>
+                  <td style={{ padding: "4px 6px 4px 0", color: "#666" }}>{name}</td>
                   {years.map((y) => {
                     const v = result.metricsByYear[y][name];
                     return (
-                      <td key={y} style={{ padding: "4px 0", fontWeight: 600, textAlign: "right" }}>
-                        {v === null ? "-" : String(v)}
+                      <td
+                        key={y}
+                        title={v ? `정확한 값: ${v.exact}` : undefined}
+                        style={{
+                          padding: "4px 0",
+                          fontWeight: 600,
+                          textAlign: "right",
+                          whiteSpace: "nowrap",
+                          cursor: v ? "help" : "default",
+                          borderBottom: v ? "1px dotted #bbb" : undefined,
+                        }}
+                      >
+                        {v === null ? "-" : v.display}
                       </td>
                     );
                   })}
@@ -280,8 +292,12 @@ export default function Home() {
               ))}
             </tbody>
           </table>
+          </div>
+          <p style={{ fontSize: 11, color: "#999", margin: "0 0 12px" }}>
+            금액 위에 마우스를 올리면 정확한 숫자가 표시됩니다. (점선 밑줄이 있는 값)
+          </p>
 
-          <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{result.analysis}</p>
+          <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14 }}>{result.analysis}</p>
           {result.reportUrl && (
             <a
               href={result.reportUrl}

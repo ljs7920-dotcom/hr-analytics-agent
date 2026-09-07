@@ -51,6 +51,15 @@ export async function POST(req: NextRequest) {
       latest.employee[0]?.rcept_no || latest.financials[0]?.rcept_no || latest.execComp[0]?.rcept_no || null;
     const reportUrl = rceptNo ? `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rceptNo}` : null;
 
+    // AI에게는 화면 표시용 요약형이 아니라 "정확한 숫자(exact)"만 추려서 전달합니다.
+    // 이렇게 해야 AI가 "조/억" 요약형을 다시 해석하다 실수하지 않고 정확한 값을 그대로 인용합니다.
+    const exactMetricsByYear: Record<string, Record<string, string | null>> = {};
+    for (const [y, metrics] of Object.entries(metricsByYear)) {
+      exactMetricsByYear[y] = Object.fromEntries(
+        Object.entries(metrics).map(([k, v]) => [k, v ? v.exact : null])
+      );
+    }
+
     const promptIntro = multiYear
       ? `다음은 ${corpName}의 ${years.join("~")}년(${reportLabel} 기준) 연도별 인력·보상·재무 지표입니다. 연도를 키(key)로 하는 JSON입니다:`
       : `다음은 ${corpName}의 ${year}년 ${reportLabel} 기준 인력·보상·재무 지표입니다:`;
@@ -63,7 +72,7 @@ export async function POST(req: NextRequest) {
       model: "gemini-3.5-flash-lite",
       contents:
         `${promptIntro}\n\n` +
-        JSON.stringify(metricsByYear, null, 2) +
+        JSON.stringify(exactMetricsByYear, null, 2) +
         `\n\n${promptTail}` +
         `데이터에 없는 값은 추측하지 말고 "해당 공시에 없음"이라고 말해줘. ` +
         `분기·반기 보고서는 그 기간까지의 누적/현재 값일 수 있다는 점도 참고해서 설명해줘.`,
