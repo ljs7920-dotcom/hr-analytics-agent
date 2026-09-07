@@ -52,8 +52,16 @@ async function main() {
 }
 
 function writeResult(list) {
-  const outPath = path.join(process.cwd(), "data", "corp-codes.json");
-  fs.writeFileSync(outPath, JSON.stringify(list));
+  const dataPath = path.join(process.cwd(), "data", "corp-codes.json");
+  fs.writeFileSync(dataPath, JSON.stringify(list));
+
+  // public 폴더에 넣으면 브라우저가 정적 파일처럼 직접 내려받을 수 있습니다.
+  // 이름만 남긴 가벼운 목록이라, 자동완성할 때마다 서버에 물어볼 필요 없이
+  // 브라우저 안에서 바로 걸러낼 수 있어 훨씬 빠릅니다.
+  const publicDir = path.join(process.cwd(), "public");
+  if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+  const namesOnly = list.map((c) => c.corp_name).sort((a, b) => a.localeCompare(b, "ko"));
+  fs.writeFileSync(path.join(publicDir, "corp-names.json"), JSON.stringify(namesOnly));
 }
 
 main().catch((err) => {

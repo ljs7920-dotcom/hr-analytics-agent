@@ -39,22 +39,25 @@ async function dartGet(path: string, params: Record<string, string>) {
   return data.list || [];
 }
 
+// reprt_code: 11011=사업보고서(연간), 11012=반기보고서, 11013=1분기보고서, 11014=3분기보고서
+// (OpenDART에는 4분기/하반기 전용 보고서가 따로 없습니다. 4분기는 사업보고서, 하반기는 사업보고서에 포함됩니다.)
+
 // 직원현황 (부문별 직원 수, 평균 근속연수, 1인평균 급여액 등)
-export async function getEmployeeStatus(corp_code: string, year: string) {
-  return dartGet("empSttus.json", { corp_code, bsns_year: year, reprt_code: "11011" });
+export async function getEmployeeStatus(corp_code: string, year: string, reprt_code: string = "11011") {
+  return dartGet("empSttus.json", { corp_code, bsns_year: year, reprt_code });
 }
 
 // 이사·감사 전체의 보수현황 (등기임원 보수 총액)
-export async function getExecutiveComp(corp_code: string, year: string) {
-  return dartGet("hmvAuditAllSttus.json", { corp_code, bsns_year: year, reprt_code: "11011" });
+export async function getExecutiveComp(corp_code: string, year: string, reprt_code: string = "11011") {
+  return dartGet("hmvAuditAllSttus.json", { corp_code, bsns_year: year, reprt_code });
 }
 
 // 단일회사 전체 재무제표 (매출액, 영업이익 등)
-export async function getFinancials(corp_code: string, year: string) {
+export async function getFinancials(corp_code: string, year: string, reprt_code: string = "11011") {
   return dartGet("fnlttSinglAcntAll.json", {
     corp_code,
     bsns_year: year,
-    reprt_code: "11011",
+    reprt_code,
     fs_div: "CFS",
   });
 }

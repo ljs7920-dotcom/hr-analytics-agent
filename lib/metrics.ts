@@ -4,6 +4,12 @@ function toNumber(v: any): number {
   return isNaN(n) ? 0 : n;
 }
 
+// 1000 단위마다 콤마(,)를 찍고 끝에 단위를 붙여줍니다. (예: 135000000 -> "1억 3,500만원"이 아니라 "135,000,000원")
+function formatWithUnit(n: number | null, unit: string): string | null {
+  if (n === null) return null;
+  return `${n.toLocaleString("ko-KR")}${unit}`;
+}
+
 // OpenDART 응답의 필드명은 보고서마다 표기가 조금씩 다를 수 있습니다.
 // 실제 응답을 한 번 콘솔에 찍어보고 아래 필드명이 다르면 맞춰서 수정하세요.
 export function computeMetrics(
@@ -25,12 +31,15 @@ export function computeMetrics(
     0
   );
 
+  const avgSalary = totalEmployees ? Math.round(totalSalary / totalEmployees) : null;
+  const laborCostRatio =
+    revenue && totalSalary ? +((totalSalary / revenue) * 100).toFixed(2) : null;
+
   return {
-    총직원수: totalEmployees || null,
-    "1인평균급여(원)": totalEmployees ? Math.round(totalSalary / totalEmployees) : null,
-    매출액: revenue,
-    "인건비/매출 비중(%)":
-      revenue && totalSalary ? +((totalSalary / revenue) * 100).toFixed(2) : null,
-    등기임원보수총액: execTotalComp || null,
+    총직원수: formatWithUnit(totalEmployees || null, "명"),
+    "1인평균급여": formatWithUnit(avgSalary, "원"),
+    매출액: formatWithUnit(revenue, "원"),
+    "인건비/매출 비중": laborCostRatio === null ? null : `${laborCostRatio}%`,
+    등기임원보수총액: formatWithUnit(execTotalComp || null, "원"),
   };
 }
