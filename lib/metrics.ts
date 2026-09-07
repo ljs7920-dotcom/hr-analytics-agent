@@ -57,11 +57,17 @@ function formatSimple(s: string | null): Metric {
   return metricValue(s, s);
 }
 
+// 한글 사이에 일반 공백뿐 아니라 전각 공백("합　계") 등이 섞여 오는 경우도 있어
+// 모든 공백류 문자를 제거하고 비교합니다.
+function normalizeLabel(s: any): string {
+  return String(s || "").replace(/\s+/g, "");
+}
+
 // OpenDART 직원현황(empSttus) 응답에는 "DX 남", "DX 여", "성별합계 남", "성별합계 여", "합계" 같은
-// 부서별·성별 소계 행이 섞여서 옵니다. 전부 더하면 중복 집계가 되므로, "합계"라고 정확히 표시된
+// 부서별·성별 소계 행이 섞여서 옵니다. 전부 더하면 중복 집계가 되므로, "합계"라고 표시된
 // 행 하나만 뽑아서 씁니다. (그런 행이 없는 회사는 어차피 행이 1개뿐인 경우가 많아 그 행을 그대로 씁니다.)
 function pickEmployeeTotalRow(employee: any[]): any | null {
-  const total = employee.find((e) => (e.fo_bbm || "").trim() === "합계");
+  const total = employee.find((e) => normalizeLabel(e.fo_bbm) === "합계");
   if (total) return total;
   if (employee.length === 1) return employee[0];
   return null;
@@ -87,14 +93,32 @@ export function computeMetrics(
 ) {
   const empTotal = pickEmployeeTotalRow(employee);
 
-  const totalEmployees = empTotal ? toNumber(empTotal.sm) || null : null;
-  const regularCount = empTotal ? toNumber(empTotal.rgllbr_co) || null : null; // 기간의 정함이 없는 근로자(정규직)
-  const contractCount = empTotal ? toNumber(empTotal.cnttk_co) || null : null; // 기간제근로자
-  const avgTenure = empTotal?.avrg_cnwk_sdytrn ? String(empTotal.avrg_cnwk_sdytrn).trim() : null;
+  let totalEmployees: number | null = null;
+  let regularCount: number | null = null;
+  let contractCount: number | null = null;
+  let avgTenure: string | null = null;
+  let totalSalaryWon: number | null = null;
+  let avgSalaryFieldWon: number | null = null;
 
-  // 연간급여총액/1인평균급여액은 OpenDART에서 "백만원" 단위로 내려오므로 100만을 곱해 원 단위로 바꿉니다.
-  const totalSalaryWon = empTotal ? toNumber(empTotal.fyer_salary_totamt) * 1_000_000 || null : null;
-  const avgSalaryFieldWon = empTotal ? toNumber(empTotal.jan_salary_am) * 1_000_000 || null : null;
+  if (empTotal) {
+    totalEmployees = toNumber(empTotal.sm) || null;
+    regularCount = toNumber(empTotal.rgllbr_co) || null; // 기간의 정함이 없는 근로자(정규직)
+    contractCount = toNumber(empTotal.cnttk_co) || null; // 기간제근로자
+    avgTenure = empTotal.avrg_cnwk_sdytrn ? String(empTotal.avrg_cnwk_sdytrn).trim() : null;
+    // 연간급여총액/1인평균급여액은 OpenDART에서 "백만원" 단위로 내려오므로 100만을 곱해 원 단위로 바꿉니다.
+    totalSalaryWon = toNumber(empTotal.fyer_salary_totamt) * 1_000_000 || null;
+    avgSalaryFieldWon = toNumber(empTotal.jan_salary_am) * 1_000_000 || null;
+  } else if (employee.length > 1) {
+    // "합계" 행을 못 찾은 경우의 최후 수단: 소계로 보이는("합계"라는 글자가 들어간) 행은 빼고
+    // 나머지 부서/성별 행만 더합니다. (평균근속연수는 단순 평균이 부정확할 수 있어 생략합니다.)
+    const rows = employee.filter((e) => !normalizeLabel(e.fo_bbm).includes("합계"));
+    totalEmployees = rows.reduce((sum, e) => sum + toNumber(e.sm), 0) || null;
+    regularCount = rows.reduce((sum, e) => sum + toNumber(e.rgllbr_co), 0) || null;
+    contractCount = rows.reduce((sum, e) => sum + toNumber(e.cnttk_co), 0) || null;
+    const summedSalary = rows.reduce((sum, e) => sum + toNumber(e.fyer_salary_totamt), 0);
+    totalSalaryWon = summedSalary ? summedSalary * 1_000_000 : null;
+  }
+
   const avgSalaryWon =
     avgSalaryFieldWon || (totalEmployees && totalSalaryWon ? Math.round(totalSalaryWon / totalEmployees) : null);
 

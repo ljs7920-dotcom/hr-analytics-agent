@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 type ReportCategory = "annual" | "half" | "quarter";
@@ -37,6 +37,14 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+
+  // 새 결과가 나오면 표의 가로 스크롤 위치를 항상 맨 왼쪽(지표 이름이 보이는 위치)으로 되돌립니다.
+  useEffect(() => {
+    if (result && tableScrollRef.current) {
+      tableScrollRef.current.scrollLeft = 0;
+    }
+  }, [result]);
 
   // 사업보고서(연간)는 통상 다음 해 3월에 제출됩니다.
   // 그래서 "최신으로 확인 가능한 사업보고서 연도"는 보통 작년이고,
@@ -155,7 +163,7 @@ export default function Home() {
   const metricNames = result ? Object.keys(result.metricsByYear[years[0]]) : [];
 
   return (
-    <main style={{ maxWidth: 720, margin: "0 auto", padding: "40px 20px" }}>
+    <main style={{ maxWidth: 920, margin: "0 auto", padding: "40px 20px" }}>
       <h1 style={{ fontSize: 22, marginBottom: 4 }}>HR Analytics Agent</h1>
       <p style={{ color: "#666", marginBottom: 24 }}>
         기업명, 연도, 보고서 종류를 선택하면 OpenDART 공시 데이터를 기반으로 인력·보상·재무 지표를 계산하고 설명합니다.
@@ -268,11 +276,24 @@ export default function Home() {
             </button>
           </div>
 
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto" }} ref={tableScrollRef}>
           <table style={{ width: "100%", borderCollapse: "collapse", margin: "12px 0", fontSize: 13 }}>
             <thead>
               <tr>
-                <th style={{ textAlign: "left", padding: "4px 6px 4px 0", color: "#888", fontWeight: 400, fontSize: 11 }}>지표</th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: "4px 6px 4px 0",
+                    color: "#888",
+                    fontWeight: 400,
+                    fontSize: 11,
+                    position: "sticky",
+                    left: 0,
+                    background: "#fff",
+                  }}
+                >
+                  지표
+                </th>
                 {years.map((y) => (
                   <th key={y} style={{ textAlign: "right", padding: "4px 0", color: "#888", fontWeight: 400, fontSize: 11, whiteSpace: "nowrap" }}>
                     {y}
@@ -283,7 +304,18 @@ export default function Home() {
             <tbody>
               {metricNames.map((name) => (
                 <tr key={name}>
-                  <td style={{ padding: "4px 6px 4px 0", color: "#666" }}>{name}</td>
+                  <td
+                    style={{
+                      padding: "4px 6px 4px 0",
+                      color: "#666",
+                      position: "sticky",
+                      left: 0,
+                      background: "#fff",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {name}
+                  </td>
                   {years.map((y) => {
                     const v = result.metricsByYear[y][name];
                     return (
