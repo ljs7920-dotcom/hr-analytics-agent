@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const metrics = computeMetrics(employee, execComp, financials);
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents:
         `다음은 ${corpName}의 ${year}년 공시 기준 인력·보상·재무 지표입니다:\n\n` +
         JSON.stringify(metrics, null, 2) +
