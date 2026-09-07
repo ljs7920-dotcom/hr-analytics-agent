@@ -26,7 +26,7 @@ export default function Home() {
   const [corpName, setCorpName] = useState("");
   const [allNames, setAllNames] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [year, setYear] = useState("2024");
+  const [year, setYear] = useState("");
   const [reportCategory, setReportCategory] = useState<ReportCategory>("annual");
   const [quarterCode, setQuarterCode] = useState<"11013" | "11014">("11013");
   const [yearsCount, setYearsCount] = useState(1);
@@ -37,6 +37,15 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // 사업보고서(연간)는 통상 다음 해 3월에 제출됩니다.
+  // 그래서 "최신으로 확인 가능한 사업보고서 연도"는 보통 작년이고,
+  // 아직 3월이 지나지 않은 1~2월에는 재작년 것까지만 확실히 나와있을 수 있습니다.
+  useEffect(() => {
+    const now = new Date();
+    const latestAnnualYear = now.getMonth() < 2 ? now.getFullYear() - 2 : now.getFullYear() - 1;
+    setYear(String(latestAnnualYear));
+  }, []);
 
   // 페이지가 열릴 때 회사 이름 전체 목록을 딱 한 번만 받아둡니다.
   useEffect(() => {
@@ -58,6 +67,7 @@ export default function Home() {
   }
 
   const reprtCode = reportCategory === "annual" ? "11011" : reportCategory === "half" ? "11012" : quarterCode;
+  const isValidCorpName = allNames.includes(corpName);
 
   async function copyMetricsForExcel() {
     if (!result) return;
@@ -174,6 +184,11 @@ export default function Home() {
             style={{ width: 100, padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
           />
         </div>
+        {corpName.trim().length > 0 && !isValidCorpName && (
+          <p style={{ fontSize: 12, color: "#c0392b", margin: "6px 0 0" }}>
+            자동완성 목록에 뜨는 회사명 중 하나를 정확히 선택해주세요. (직접 입력만으로는 분석할 수 없습니다)
+          </p>
+        )}
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -224,7 +239,7 @@ export default function Home() {
 
       <button
         onClick={runAnalysis}
-        disabled={loading || !corpName}
+        disabled={loading || !isValidCorpName}
         style={{ width: "100%", padding: "12px 18px", borderRadius: 8, border: "none", background: "#111", color: "#fff", marginBottom: 20 }}
       >
         {loading ? "분석중..." : "분석하기"}

@@ -57,6 +57,27 @@ function formatSimple(s: string | null): Metric {
   return metricValue(s, s);
 }
 
+// OpenDART 직원현황(empSttus) 응답에는 "DX 남", "DX 여", "성별합계 남", "성별합계 여", "합계" 같은
+// 부서별·성별 소계 행이 섞여서 옵니다. 전부 더하면 중복 집계가 되므로, "합계"라고 정확히 표시된
+// 행 하나만 뽑아서 씁니다. (그런 행이 없는 회사는 어차피 행이 1개뿐인 경우가 많아 그 행을 그대로 씁니다.)
+function pickEmployeeTotalRow(employee: any[]): any | null {
+  const total = employee.find((e) => (e.fo_bbm || "").trim() === "합계");
+  if (total) return total;
+  if (employee.length === 1) return employee[0];
+  return null;
+}
+
+// 회사/연도에 따라 "매출액"이 아니라 "수익(매출액)", 금융/보험사는 "영업수익"으로 표기되기도 합니다.
+// 우선순위대로 먼저 정확히 일치하는 계정명을 찾고, 그래도 없으면 "매출액"이 포함된 계정명을 찾습니다.
+function findRevenueItem(financials: any[]) {
+  const candidates = ["매출액", "수익(매출액)", "영업수익"];
+  for (const name of candidates) {
+    const hit = financials.find((f) => f.account_nm === name);
+    if (hit) return hit;
+  }
+  return financials.find((f) => f.account_nm && f.account_nm.includes("매출액")) || null;
+}
+
 // OpenDART 응답의 필드명은 보고서마다 표기가 조금씩 다를 수 있습니다.
 // 실제 응답을 한 번 콘솔에 찍어보고 아래 필드명이 다르면 맞춰서 수정하세요.
 export function computeMetrics(
@@ -64,28 +85,45 @@ export function computeMetrics(
   execComp: any[],
   financials: any[]
 ) {
-  const totalEmployees = employee.reduce((sum, e) => sum + toNumber(e.sm), 0);
-  const totalSalary = employee.reduce(
-    (sum, e) => sum + toNumber(e.fyer_salary_totamt),
-    0
-  );
+  const empTotal = pickEmployeeTotalRow(employee);
 
-  const revenueItem = financials.find((f) => f.account_nm === "매출액");
+  const totalEmployees = empTotal ? toNumber(empTotal.sm) || null : null;
+  const regularCount = empTotal ? toNumber(empTotal.rgllbr_co) || null : null; // 기간의 정함이 없는 근로자(정규직)
+  const contractCount = empTotal ? toNumber(empTotal.cnttk_co) || null : null; // 기간제근로자
+  const avgTenure = empTotal?.avrg_cnwk_sdytrn ? String(empTotal.avrg_cnwk_sdytrn).trim() : null;
+
+  // 연간급여총액/1인평균급여액은 OpenDART에서 "백만원" 단위로 내려오므로 100만을 곱해 원 단위로 바꿉니다.
+  const totalSalaryWon = empTotal ? toNumber(empTotal.fyer_salary_totamt) * 1_000_000 || null : null;
+  const avgSalaryFieldWon = empTotal ? toNumber(empTotal.jan_salary_am) * 1_000_000 || null : null;
+  const avgSalaryWon =
+    avgSalaryFieldWon || (totalEmployees && totalSalaryWon ? Math.round(totalSalaryWon / totalEmployees) : null);
+
+  const revenueItem = findRevenueItem(financials);
   const revenue = revenueItem ? toNumber(revenueItem.thstrm_amount) : null;
+  const revenueAccountName = revenueItem ? revenueItem.account_nm : null;
 
+  // 주의: 이 API(hmvAuditAllSttus)의 정확한 필드명을 아직 실제 응답으로 검증하지 못했습니다.
+  // 자주 쓰이는 후보 필드명 여러 개를 시도하도록 방어적으로 짜뒀지만, 실제 값이 계속 "-"로
+  // 나온다면 이 필드명이 다르다는 뜻이니 알려주세요.
   const execTotalComp = execComp.reduce(
-    (sum, e) => sum + toNumber(e.jan_pymnt_amt || e.gnrmst_pymntamt),
+    (sum, e) =>
+      sum +
+      toNumber(e.mendng_totamt || e.pymt_totamt || e.jan_pymnt_amt || e.gnrmst_pymntamt),
     0
   );
 
-  const avgSalary = totalEmployees ? Math.round(totalSalary / totalEmployees) : null;
   const laborCostRatio =
-    revenue && totalSalary ? +((totalSalary / revenue) * 100).toFixed(2) : null;
+    revenue && totalSalaryWon ? +((totalSalaryWon / revenue) * 100).toFixed(2) : null;
 
   return {
-    총직원수: formatSimple(formatWithUnit(totalEmployees || null, "명")),
-    "1인평균급여": formatWon(avgSalary),
+    총직원수: formatSimple(formatWithUnit(totalEmployees, "명")),
+    "정규직(기간의 정함이 없는 근로자)": formatSimple(formatWithUnit(regularCount, "명")),
+    기간제근로자: formatSimple(formatWithUnit(contractCount, "명")),
+    평균근속연수: formatSimple(avgTenure ? `${avgTenure}년` : null),
+    "1인평균급여": formatWon(avgSalaryWon),
+    연간급여총액: formatWon(totalSalaryWon),
     매출액: formatWon(revenue),
+    "매출액 산출 근거 계정명": formatSimple(revenueAccountName),
     "인건비/매출 비중": formatSimple(laborCostRatio === null ? null : `${laborCostRatio}%`),
     등기임원보수총액: formatWon(execTotalComp || null),
   };
