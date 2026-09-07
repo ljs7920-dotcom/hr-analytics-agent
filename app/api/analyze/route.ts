@@ -14,41 +14,72 @@ const REPORT_LABELS: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { corpName, year, reprtCode = "11011" } = await req.json();
+    const { corpName, year, reprtCode = "11011", yearsCount = 1 } = await req.json();
     if (!corpName || !year) {
       return NextResponse.json({ error: "기업명과 연도를 모두 입력하세요." }, { status: 400 });
     }
 
+    const n = Math.min(Math.max(parseInt(yearsCount, 10) || 1, 1), 5);
+    const multiYear = n > 1;
+
     const reportLabel = REPORT_LABELS[reprtCode] || "사업보고서(연간)";
     const corpCode = findCorpCode(corpName);
 
-    const [employee, execComp, financials] = await Promise.all([
-      getEmployeeStatus(corpCode, year, reprtCode),
-      getExecutiveComp(corpCode, year, reprtCode),
-      getFinancials(corpCode, year, reprtCode),
-    ]);
+    // 선택한 개수만큼 연도를 준비합니다. (예: n=3, 선택 연도 2024 -> 2022, 2023, 2024)
+    const baseYear = parseInt(year, 10);
+    const years = Array.from({ length: n }, (_, i) => String(baseYear - (n - 1 - i)));
 
-    const metrics = computeMetrics(employee, execComp, financials);
+    const perYearData = await Promise.all(
+      years.map(async (y) => {
+        const [employee, execComp, financials] = await Promise.all([
+          getEmployeeStatus(corpCode, y, reprtCode),
+          getExecutiveComp(corpCode, y, reprtCode),
+          getFinancials(corpCode, y, reprtCode),
+        ]);
+        return { year: y, employee, execComp, financials };
+      })
+    );
 
-    // 이 공시 원문의 접수번호(rcept_no)를 찾아서 DART 원문 페이지 링크를 만듭니다.
-    // 직원현황/재무제표/임원보수 중 데이터가 있는 곳 아무 데서나 가져오면 됩니다.
+    const metricsByYear: Record<string, ReturnType<typeof computeMetrics>> = {};
+    for (const d of perYearData) {
+      metricsByYear[d.year] = computeMetrics(d.employee, d.execComp, d.financials);
+    }
+
+    // 공시 원문 링크는 가장 최근(선택한) 연도 기준으로 만듭니다.
+    const latest = perYearData[perYearData.length - 1];
     const rceptNo =
-      employee[0]?.rcept_no || financials[0]?.rcept_no || execComp[0]?.rcept_no || null;
+      latest.employee[0]?.rcept_no || latest.financials[0]?.rcept_no || latest.execComp[0]?.rcept_no || null;
     const reportUrl = rceptNo ? `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rceptNo}` : null;
+
+    const promptIntro = multiYear
+      ? `다음은 ${corpName}의 ${years.join("~")}년(${reportLabel} 기준) 연도별 인력·보상·재무 지표입니다. 연도를 키(key)로 하는 JSON입니다:`
+      : `다음은 ${corpName}의 ${year}년 ${reportLabel} 기준 인력·보상·재무 지표입니다:`;
+
+    const promptTail = multiYear
+      ? `이 데이터만 근거로 HR 담당자가 이해하기 쉽게 연도별 추이(증가/감소 흐름)를 3~5개 핵심 포인트로 짧게 설명해줘. `
+      : `이 데이터만 근거로 HR 담당자가 이해하기 쉽게 핵심 인사이트를 3~5개, 짧은 문장으로 설명해줘. `;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash-lite",
       contents:
-        `다음은 ${corpName}의 ${year}년 ${reportLabel} 기준 인력·보상·재무 지표입니다:\n\n` +
-        JSON.stringify(metrics, null, 2) +
-        `\n\n이 데이터만 근거로 HR 담당자가 이해하기 쉽게 핵심 인사이트를 3~5개, 짧은 문장으로 설명해줘. ` +
+        `${promptIntro}\n\n` +
+        JSON.stringify(metricsByYear, null, 2) +
+        `\n\n${promptTail}` +
         `데이터에 없는 값은 추측하지 말고 "해당 공시에 없음"이라고 말해줘. ` +
         `분기·반기 보고서는 그 기간까지의 누적/현재 값일 수 있다는 점도 참고해서 설명해줘.`,
     });
 
     const analysis = response.text ?? "";
 
-    return NextResponse.json({ corpName, year, reprtCode, reportLabel, metrics, analysis, reportUrl });
+    return NextResponse.json({
+      corpName,
+      years,
+      reprtCode,
+      reportLabel,
+      metricsByYear,
+      analysis,
+      reportUrl,
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "알 수 없는 오류" }, { status: 500 });
   }

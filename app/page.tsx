@@ -29,6 +29,7 @@ export default function Home() {
   const [year, setYear] = useState("2024");
   const [reportCategory, setReportCategory] = useState<ReportCategory>("annual");
   const [quarterCode, setQuarterCode] = useState<"11013" | "11014">("11013");
+  const [yearsCount, setYearsCount] = useState(1);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
@@ -38,7 +39,6 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
 
   // 페이지가 열릴 때 회사 이름 전체 목록을 딱 한 번만 받아둡니다.
-  // 그 이후엔 서버에 물어보지 않고 브라우저 안에서 바로 검색하기 때문에 훨씬 빠릅니다.
   useEffect(() => {
     fetch("/corp-names.json")
       .then((res) => res.json())
@@ -61,13 +61,28 @@ export default function Home() {
 
   async function copyMetricsForExcel() {
     if (!result) return;
-    const rows = [
+    const years: string[] = result.years;
+    const metricNames = Object.keys(result.metricsByYear[years[0]]);
+
+    const header = ["지표", ...years.map((y) => `${y}년`)];
+    const rows = metricNames.map((name) => [
+      name,
+      ...years.map((y) => {
+        const v = result.metricsByYear[y][name];
+        return v === null ? "-" : String(v);
+      }),
+    ]);
+
+    const tsv = [
       ["기업명", result.corpName],
-      ["연도", result.year],
       ["보고서 종류", result.reportLabel],
-      ...Object.entries(result.metrics).map(([k, v]) => [k, v === null ? "-" : String(v)]),
-    ];
-    const tsv = rows.map((row) => row.join("\t")).join("\n");
+      [],
+      header,
+      ...rows,
+    ]
+      .map((row) => row.join("\t"))
+      .join("\n");
+
     try {
       await navigator.clipboard.writeText(tsv);
       setCopied(true);
@@ -86,7 +101,7 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ corpName, year, reprtCode }),
+        body: JSON.stringify({ corpName, year, reprtCode, yearsCount }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -125,6 +140,9 @@ export default function Home() {
       setChatLoading(false);
     }
   }
+
+  const years: string[] = result?.years || [];
+  const metricNames = result ? Object.keys(result.metricsByYear[years[0]]) : [];
 
   return (
     <main style={{ maxWidth: 720, margin: "0 auto", padding: "40px 20px" }}>
@@ -183,9 +201,25 @@ export default function Home() {
           </div>
         )}
 
-        <p style={{ fontSize: 12, color: "#888", background: "#f0f0f0", padding: "8px 10px", borderRadius: 8, margin: 0 }}>
+        <p style={{ fontSize: 12, color: "#888", background: "#f0f0f0", padding: "8px 10px", borderRadius: 8, margin: "0 0 8px" }}>
           2분기(4~6월) 데이터는 반기보고서에, 4분기 데이터는 사업보고서에 포함되어 있어 별도 항목이 없습니다.
         </p>
+
+        <label style={{ fontSize: 12, color: "#888", display: "block", marginBottom: 6 }}>
+          조회할 연도 수 (선택한 연도부터 과거로 몇 개년)
+        </label>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} style={yearsCount === n ? btnActive : btnBase} onClick={() => setYearsCount(n)}>
+              {n}개년
+            </button>
+          ))}
+        </div>
+        {yearsCount > 1 && (
+          <p style={{ fontSize: 12, color: "#888", margin: "8px 0 0" }}>
+            {parseInt(year || "0", 10) - yearsCount + 1}년 ~ {year}년, 총 {yearsCount}개년을 함께 조회하고 추이를 분석합니다.
+          </p>
+        )}
       </div>
 
       <button
@@ -202,7 +236,7 @@ export default function Home() {
         <div style={{ background: "#fff", padding: 20, borderRadius: 12, marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h3 style={{ margin: 0 }}>
-              {result.corpName} · {result.year} · {result.reportLabel}
+              {result.corpName} · {years.join("~")}년 · {result.reportLabel}
             </h3>
             <button
               onClick={copyMetricsForExcel}
@@ -218,18 +252,35 @@ export default function Home() {
               {copied ? "복사됨!" : "엑셀로 복사하기"}
             </button>
           </div>
+
           <table style={{ width: "100%", borderCollapse: "collapse", margin: "12px 0" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", padding: "4px 0", color: "#888", fontWeight: 400, fontSize: 12 }}>지표</th>
+                {years.map((y) => (
+                  <th key={y} style={{ textAlign: "right", padding: "4px 0", color: "#888", fontWeight: 400, fontSize: 12 }}>
+                    {y}년
+                  </th>
+                ))}
+              </tr>
+            </thead>
             <tbody>
-              {Object.entries(result.metrics).map(([k, v]) => (
-                <tr key={k}>
-                  <td style={{ padding: "4px 0", color: "#666" }}>{k}</td>
-                  <td style={{ padding: "4px 0", fontWeight: 600 }}>
-                    {v === null ? "-" : String(v)}
-                  </td>
+              {metricNames.map((name) => (
+                <tr key={name}>
+                  <td style={{ padding: "4px 0", color: "#666" }}>{name}</td>
+                  {years.map((y) => {
+                    const v = result.metricsByYear[y][name];
+                    return (
+                      <td key={y} style={{ padding: "4px 0", fontWeight: 600, textAlign: "right" }}>
+                        {v === null ? "-" : String(v)}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
           </table>
+
           <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{result.analysis}</p>
           {result.reportUrl && (
             <a
@@ -262,7 +313,7 @@ export default function Home() {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <input
-              placeholder="예: 작년이랑 비교하면 어때?"
+              placeholder={yearsCount > 1 ? "예: 가장 많이 늘어난 지표는?" : "예: 3개년으로 비교하려면 위에서 개수를 늘리고 다시 분석해줘"}
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && askFollowUp()}
