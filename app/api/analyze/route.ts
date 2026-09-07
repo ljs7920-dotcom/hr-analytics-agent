@@ -80,13 +80,6 @@ export async function POST(req: NextRequest) {
 
     const analysis = response.text ?? "";
 
-    // 디버깅용: 근속연수/급여 필드명이 여전히 안 맞을 때 원인을 찾기 위해
-    // 직원현황 원본 데이터 한 줄을 그대로 같이 보냅니다. (브라우저 개발자도구 콘솔에서 확인 가능)
-    const debugEmployeeRawSample =
-      latest.employee.find((e: any) => (e.fo_bbm || "").replace(/\s+/g, "") === "합계") ||
-      latest.employee[0] ||
-      null;
-
     return NextResponse.json({
       corpName,
       years,
@@ -95,7 +88,6 @@ export async function POST(req: NextRequest) {
       metricsByYear,
       analysis,
       reportUrl,
-      debugEmployeeRawSample,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "알 수 없는 오류" }, { status: 500 });

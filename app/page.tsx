@@ -124,11 +124,6 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setResult(data);
-      if (data.debugEmployeeRawSample) {
-        // 근속연수/급여가 안 나올 때 원인을 찾기 위한 임시 디버깅용 출력입니다.
-        // 브라우저에서 F12(개발자도구) → Console 탭에서 이 내용을 확인할 수 있습니다.
-        console.log("[디버깅] 직원현황 원본 데이터 한 줄:", data.debugEmployeeRawSample);
-      }
     } catch (e: any) {
       setError(e.message);
     } finally {

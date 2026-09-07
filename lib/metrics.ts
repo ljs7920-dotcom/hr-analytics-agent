@@ -63,12 +63,20 @@ function normalizeLabel(s: any): string {
   return String(s || "").replace(/\s+/g, "");
 }
 
-// OpenDART 직원현황(empSttus) 응답에는 "DX 남", "DX 여", "성별합계 남", "성별합계 여", "합계" 같은
-// 부서별·성별 소계 행이 섞여서 옵니다. 전부 더하면 중복 집계가 되므로, "합계"라고 표시된
-// 행 하나만 뽑아서 씁니다. (그런 행이 없는 회사는 어차피 행이 1개뿐인 경우가 많아 그 행을 그대로 씁니다.)
+// OpenDART 직원현황(empSttus) 응답에는 "DX", "DS" 같은 부서별 소계 행과 회사 전체 합계 행이 섞여서 옵니다.
+// "합계"라는 글자가 정확히 적힌 행을 우선 찾고, 그게 없는 연도(표기 방식이 다른 경우)를 위해
+// "급여총액이 실제로 채워져 있는 행"을 2차 기준으로 씁니다 — 부서별 행은 개인정보 보호를 위해
+// 보통 급여 항목을 "-"로 비워두고, 회사 전체 합계 행에만 실제 숫자가 들어있기 때문입니다.
 function pickEmployeeTotalRow(employee: any[]): any | null {
-  const total = employee.find((e) => normalizeLabel(e.fo_bbm) === "합계");
-  if (total) return total;
+  const byLabel = employee.find((e) => normalizeLabel(e.fo_bbm) === "합계");
+  if (byLabel) return byLabel;
+
+  const bySalaryPresence = employee.find((e) => {
+    const salary = String(e.fyer_salary_totamt || "").trim();
+    return salary !== "" && salary !== "-";
+  });
+  if (bySalaryPresence) return bySalaryPresence;
+
   if (employee.length === 1) return employee[0];
   return null;
 }
