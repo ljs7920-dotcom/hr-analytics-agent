@@ -180,6 +180,17 @@ function findRevenueItem(financials: any[]) {
   return financials.find((f) => f.account_nm && f.account_nm.includes("매출액")) || null;
 }
 
+// 영업이익도 매출액과 같은 방식으로 폭넓게 찾습니다. 적자인 해는 "영업손실" 또는
+// "영업이익(손실)"이라는 계정명으로 표기되는 경우가 많아 그것까지 후보에 넣습니다.
+function findOperatingProfitItem(financials: any[]) {
+  const candidates = ["영업이익", "영업이익(손실)", "영업손실"];
+  for (const name of candidates) {
+    const hit = financials.find((f) => f.account_nm === name);
+    if (hit) return hit;
+  }
+  return financials.find((f) => f.account_nm && f.account_nm.includes("영업이익")) || null;
+}
+
 // OpenDART 응답의 필드명은 보고서마다 표기가 조금씩 다를 수 있습니다.
 // 실제 응답을 한 번 콘솔에 찍어보고 아래 필드명이 다르면 맞춰서 수정하세요.
 export function computeMetrics(
@@ -201,6 +212,15 @@ export function computeMetrics(
   const revenueItem = findRevenueItem(financials);
   const revenue = revenueItem ? toNumber(revenueItem.thstrm_amount) : null;
   const revenueAccountName = revenueItem ? revenueItem.account_nm : null;
+
+  const operatingProfitItem = findOperatingProfitItem(financials);
+  const operatingProfitRaw = operatingProfitItem ? toNumber(operatingProfitItem.thstrm_amount) : null;
+  // 계정명이 "영업손실"이면 적자를 뜻하므로, 표시할 때 음수로 바꿔줍니다.
+  const operatingProfit =
+    operatingProfitRaw !== null && operatingProfitItem?.account_nm?.includes("손실") && operatingProfitRaw > 0
+      ? -operatingProfitRaw
+      : operatingProfitRaw;
+  const operatingProfitAccountName = operatingProfitItem ? operatingProfitItem.account_nm : null;
 
   // 주의: 이 API(hmvAuditAllSttus)의 정확한 필드명을 아직 실제 응답으로 검증하지 못했습니다.
   // 자주 쓰이는 후보 필드명 여러 개를 시도하도록 방어적으로 짜뒀지만, 실제 값이 계속 "-"로
@@ -224,6 +244,8 @@ export function computeMetrics(
     연간급여총액: formatWonRoundedToChunman(totalSalaryWon),
     매출액: formatWonEokOnly(revenue),
     "매출액 산출 근거 계정명": formatSimple(revenueAccountName),
+    영업이익: formatWonEokOnly(operatingProfit),
+    "영업이익 산출 근거 계정명": formatSimple(operatingProfitAccountName),
     "인건비/매출 비중": formatSimple(laborCostRatio === null ? null : `${laborCostRatio}%`),
     등기임원보수총액: formatWon(execTotalComp || null),
   };

@@ -332,7 +332,7 @@ export default function Home() {
             </thead>
             <tbody>
               {metricNames.map((name) => {
-                const isAccountNameRow = name === "매출액 산출 근거 계정명";
+                const isAccountNameRow = name.includes("산출 근거 계정명");
                 return (
                   <tr key={name}>
                     <td
