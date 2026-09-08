@@ -5,9 +5,9 @@ import { useEffect, useRef, useState } from "react";
 type ChatMsg = { role: "user" | "assistant"; content: string };
 type ReportCategory = "annual" | "half" | "quarter";
 
-// 정확한 값을 hover로 볼 수 있는 셀에 쓸 하트 모양 커서 (기본 "?" 커서 대신)
+// 정확한 값을 hover로 볼 수 있는 셀에 쓸 커서: 기본 화살표 + 오른쪽 아래 작은 하트 배지
 const heartCursor =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23e0245e' d='M12 21s-6.716-4.35-9.428-8.1C.86 10.2 1.9 6 5.5 6c2.1 0 3.6 1.1 4.5 2.4C10.9 7.1 12.4 6 14.5 6 18.1 6 19.14 10.2 17.428 12.9 14.716 16.65 12 21 12 21z'/%3E%3C/svg%3E\") 12 12, pointer";
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M3 2 L3 21 L8 16.8 L11.2 24.5 L15 22.9 L11.9 15.6 L18.5 15.6 Z' fill='black' stroke='white' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpath fill='%23e0245e' stroke='white' stroke-width='0.8' d='M25 20s-3.6-2.3-4.8-4.4C19.3 13.9 20 11.8 21.8 11.8c1.1 0 1.9.6 2.2 1.2.3-.6 1.1-1.2 2.2-1.2 1.8 0 2.5 2.1 1.6 3.8C26.6 17.7 25 20 25 20z'/%3E%3C/svg%3E\") 3 2, pointer";
 
 const btnBase: React.CSSProperties = {
   flex: 1,
@@ -25,6 +25,18 @@ const btnActive: React.CSSProperties = {
   color: "#fff",
   border: "1px solid #111",
 };
+
+// AI 응답에 섞여있는 "**굵게**" 마크다운 문법을 실제 볼드체로 바꿔서 보여줍니다.
+// (그대로 두면 별표(**)가 글자로 그대로 노출돼서 지저분해 보입니다)
+function renderWithBold(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
 
 export default function Home() {
   const [corpName, setCorpName] = useState("");
@@ -396,7 +408,7 @@ export default function Home() {
             ※ 평균근속연수는 성별 소계를 가중평균한 값이라, 반올림 특성상 공시 원본과 ±0.1년 정도 차이가 날 수 있습니다.
           </p>
 
-          <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14 }}>{result.analysis}</p>
+          <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14 }}>{renderWithBold(result.analysis)}</p>
           {result.reportUrl && (
             <a
               href={result.reportUrl}
@@ -469,7 +481,7 @@ export default function Home() {
           <div style={{ marginBottom: 12 }}>
             {chat.map((m, i) => (
               <p key={i} style={{ margin: "6px 0" }}>
-                <b>{m.role === "user" ? "나" : "AI"}:</b> {m.content}
+                <b>{m.role === "user" ? "나" : "AI"}:</b> {m.role === "assistant" ? renderWithBold(m.content) : m.content}
               </p>
             ))}
           </div>
