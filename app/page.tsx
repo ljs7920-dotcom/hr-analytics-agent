@@ -381,6 +381,10 @@ export default function Home() {
           </div>
           <p style={{ fontSize: 11, color: "#999", margin: "0 0 12px" }}>
             금액 위에 마우스를 올리면 정확한 숫자가 표시됩니다. (점선 밑줄이 있는 값)
+            <br />
+            ※ 1인평균급여는 연간급여총액 ÷ 총직원수로 계산한 값이라, 공시상 "평균 재직자 수" 기준의 공식 수치와 1~3% 정도 차이가 있을 수 있습니다.
+            <br />
+            ※ 평균근속연수는 성별 소계를 가중평균한 값이라, 반올림 특성상 공시 원본과 ±0.1년 정도 차이가 날 수 있습니다.
           </p>
 
           <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14 }}>{result.analysis}</p>

@@ -70,6 +70,14 @@ function formatWonEokOnly(n: number | null): Metric {
   return metricValue(formatWonCompactEokOnly(n), formatWonExact(n));
 }
 
+// 연간급여총액/1인평균급여처럼 자잘한 원 단위까지 보여줄 필요 없는 값은
+// 천만원 단위로 반올림해서 보여줍니다. (정확한 값은 hover/엑셀에서 그대로 확인 가능)
+function formatWonRoundedToChunman(n: number | null): Metric {
+  if (n === null) return null;
+  const rounded = Math.round(n / 10_000_000) * 10_000_000;
+  return metricValue(formatWonCompact(rounded), formatWonExact(n));
+}
+
 // 명/% 등 이미 짧은 값은 display와 exact가 같습니다.
 function formatSimple(s: string | null): Metric {
   return metricValue(s, s);
@@ -86,11 +94,10 @@ type EmployeeAggregate = {
   regularCount: number | null;
   contractCount: number | null;
   totalSalaryWon: number | null; // 원 단위로 이미 환산됨
-  avgSalaryFieldWon: number | null; // 원 단위로 이미 환산됨 (공시에 직접 나온 1인평균급여)
   avgTenure: string | null; // "12.5" 같은 문자열
 };
 
-// 연간급여총액/1인평균급여액 필드는 회사·연도에 따라 "백만원" 단위의 작은 정수로 오기도 하고,
+// 연간급여총액 필드는 회사·연도에 따라 "백만원" 단위의 작은 정수로 오기도 하고,
 // 이미 "원" 단위의 큰 숫자로 오기도 합니다(공시 형식이 통일돼있지 않음). 값의 크기로 자동 판별해서,
 // 10억 미만이면 "백만원 단위"로 보고 100만을 곱하고, 이미 10억 이상이면 "이미 원 단위"로 보고 그대로 둡니다.
 // (실제 회사 급여총액이 10억원 밑으로 내려가는 경우는 사실상 없어서 이 기준으로 안전하게 구분됩니다)
@@ -100,8 +107,12 @@ function normalizeWonAmount(raw: number): number {
 }
 
 // 여러 행(부서/성별)을 하나로 합칠 때 쓰는 함수.
-// 인원수, 급여총액은 단순 합산하면 되지만, 근속연수·1인평균급여처럼 "평균"인 값은
+// 인원수, 급여총액은 단순 합산하면 되지만, 근속연수처럼 "평균"인 값은
 // 그냥 더하면 틀리기 때문에 인원수(sm)로 가중평균을 냅니다.
+// 주의: "1인평균급여액(jan_salary_am)" 필드는 회사·연도별로 단위가 자꾸 어긋나는 문제가
+// 있어서 더 이상 이 필드를 직접 쓰지 않고, 연간급여총액 ÷ 총직원수로 직접 계산합니다.
+// (공시상 "1인평균급여"는 기말 인원이 아니라 "평균 재직자 수" 기준이라 실제 공시값과
+// 1~3% 정도 차이가 날 수 있습니다.)
 function aggregateRows(rows: any[]): EmployeeAggregate {
   const totalEmployees = rows.reduce((s, e) => s + toNumber(e.sm), 0) || null;
   const regularCount = rows.reduce((s, e) => s + toNumber(e.rgllbr_co), 0) || null;
@@ -111,8 +122,6 @@ function aggregateRows(rows: any[]): EmployeeAggregate {
 
   let tenureNum = 0;
   let tenureDen = 0;
-  let salaryFieldNum = 0;
-  let salaryFieldDen = 0;
   for (const e of rows) {
     const w = toNumber(e.sm);
     const tenure = parseFloat(String(e.avrg_cnwk_sdytrn || "").trim());
@@ -120,16 +129,10 @@ function aggregateRows(rows: any[]): EmployeeAggregate {
       tenureNum += tenure * w;
       tenureDen += w;
     }
-    const salaryAvgRaw = toNumber(e.jan_salary_am);
-    if (salaryAvgRaw && w) {
-      salaryFieldNum += normalizeWonAmount(salaryAvgRaw) * w;
-      salaryFieldDen += w;
-    }
   }
   const avgTenure = tenureDen ? (tenureNum / tenureDen).toFixed(1) : null;
-  const avgSalaryFieldWon = salaryFieldDen ? Math.round(salaryFieldNum / salaryFieldDen) : null;
 
-  return { totalEmployees, regularCount, contractCount, totalSalaryWon, avgSalaryFieldWon, avgTenure };
+  return { totalEmployees, regularCount, contractCount, totalSalaryWon, avgTenure };
 }
 
 function aggregateSingleRow(row: any): EmployeeAggregate {
@@ -138,7 +141,6 @@ function aggregateSingleRow(row: any): EmployeeAggregate {
     regularCount: toNumber(row.rgllbr_co) || null,
     contractCount: toNumber(row.cnttk_co) || null,
     totalSalaryWon: normalizeWonAmount(toNumber(row.fyer_salary_totamt)) || null,
-    avgSalaryFieldWon: normalizeWonAmount(toNumber(row.jan_salary_am)) || null,
     avgTenure: row.avrg_cnwk_sdytrn ? String(row.avrg_cnwk_sdytrn).trim() : null,
   };
 }
@@ -152,11 +154,14 @@ function aggregateSingleRow(row: any): EmployeeAggregate {
 function pickEmployeeAggregate(employee: any[]): EmployeeAggregate | null {
   if (employee.length === 0) return null;
 
-  const byLabel = employee.find((e) => normalizeLabel(e.fo_bbm) === "합계");
-  if (byLabel) return aggregateSingleRow(byLabel);
-
+  // "성별합계"(남/여 소계) 행이 있으면 그걸 우선 씁니다. "합계"라는 글자가 붙은 행은
+  // 실제로는 DART가 "성별합계"를 더해서 화면에 보여주는 계산값인 경우가 많아, 이 행을
+  // 안정적으로 찾지 못할 때가 있었습니다. 성별합계 방식을 기본으로 쓰면 항상 일관된 결과가 나옵니다.
   const genderTotalRows = employee.filter((e) => normalizeLabel(e.fo_bbm) === "성별합계");
   if (genderTotalRows.length > 0) return aggregateRows(genderTotalRows);
+
+  const byLabel = employee.find((e) => normalizeLabel(e.fo_bbm) === "합계");
+  if (byLabel) return aggregateSingleRow(byLabel);
 
   if (employee.length === 1) return aggregateSingleRow(employee[0]);
 
@@ -191,8 +196,7 @@ export function computeMetrics(
   const totalSalaryWon = agg?.totalSalaryWon ?? null;
 
   const avgSalaryWon =
-    agg?.avgSalaryFieldWon ||
-    (totalEmployees && totalSalaryWon ? Math.round(totalSalaryWon / totalEmployees) : null);
+    totalEmployees && totalSalaryWon ? Math.round(totalSalaryWon / totalEmployees) : null;
 
   const revenueItem = findRevenueItem(financials);
   const revenue = revenueItem ? toNumber(revenueItem.thstrm_amount) : null;
@@ -216,8 +220,8 @@ export function computeMetrics(
     "정규직(기간의 정함이 없는 근로자)": formatSimple(formatWithUnit(regularCount, "명")),
     기간제근로자: formatSimple(formatWithUnit(contractCount, "명")),
     평균근속연수: formatSimple(avgTenure ? `${avgTenure}년` : null),
-    "1인평균급여": formatWon(avgSalaryWon),
-    연간급여총액: formatWon(totalSalaryWon),
+    "1인평균급여": formatWonRoundedToChunman(avgSalaryWon),
+    연간급여총액: formatWonRoundedToChunman(totalSalaryWon),
     매출액: formatWonEokOnly(revenue),
     "매출액 산출 근거 계정명": formatSimple(revenueAccountName),
     "인건비/매출 비중": formatSimple(laborCostRatio === null ? null : `${laborCostRatio}%`),
