@@ -265,7 +265,7 @@ export function computeMetrics(
     "정규직(기간의 정함이 없는 근로자)": formatSimple(formatWithUnit(regularCount, "명")),
     기간제근로자: formatSimple(formatWithUnit(contractCount, "명")),
     평균근속연수: formatSimple(avgTenure ? `${avgTenure}년` : null),
-    "1인평균급여": formatWonRoundedToChunman(avgSalaryWon),
+    "1인평균급여": formatWonRoundedToMan(avgSalaryWon),
     연간급여총액: formatWonRoundedToChunman(totalSalaryWon),
     "매출액(별도)": formatWonEokOnly(revenue),
     "매출액(별도) 산출 근거 계정명": formatSimple(revenueAccountName),
