@@ -5,6 +5,10 @@ import { useEffect, useRef, useState } from "react";
 type ChatMsg = { role: "user" | "assistant"; content: string };
 type ReportCategory = "annual" | "half" | "quarter";
 
+// 정확한 값을 hover로 볼 수 있는 셀에 쓸 하트 모양 커서 (기본 "?" 커서 대신)
+const heartCursor =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23e0245e' d='M12 21s-6.716-4.35-9.428-8.1C.86 10.2 1.9 6 5.5 6c2.1 0 3.6 1.1 4.5 2.4C10.9 7.1 12.4 6 14.5 6 18.1 6 19.14 10.2 17.428 12.9 14.716 16.65 12 21 12 21z'/%3E%3C/svg%3E\") 12 12, pointer";
+
 const btnBase: React.CSSProperties = {
   flex: 1,
   padding: "8px 10px",
@@ -367,7 +371,7 @@ export default function Home() {
                             fontSize: isReferenceRow ? 11 : isAccountNameRow ? 12 : 13,
                             textAlign: "right",
                             whiteSpace: "nowrap",
-                            cursor: v ? "help" : "default",
+                            cursor: v ? heartCursor : "default",
                             borderBottom: "1px solid #eee",
                             borderTop: isFirstReferenceRow ? "1px solid #ddd" : undefined,
                             textDecoration: v ? "underline dotted" : "none",
