@@ -37,6 +37,8 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showRawData, setShowRawData] = useState(false);
+  const [rawCopied, setRawCopied] = useState(false);
   const tableScrollRef = useRef<HTMLDivElement>(null);
 
   // 새 결과가 나오면 표의 가로 스크롤 위치를 항상 맨 왼쪽(지표 이름이 보이는 위치)으로 되돌립니다.
@@ -77,6 +79,20 @@ export default function Home() {
   const reprtCode = reportCategory === "annual" ? "11011" : reportCategory === "half" ? "11012" : quarterCode;
   const isValidCorpName = allNames.includes(corpName);
 
+  async function copyRawDataForVerification() {
+    if (!result) return;
+    const text =
+      `기업명: ${result.corpName}\n연도: ${result.years.join(", ")}\n\n` +
+      JSON.stringify(result.rawEmployeeByYear, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      setRawCopied(true);
+      setTimeout(() => setRawCopied(false), 2000);
+    } catch {
+      setError("복사에 실패했습니다. 브라우저 권한을 확인해주세요.");
+    }
+  }
+
   async function copyMetricsForExcel() {
     if (!result) return;
     const years: string[] = result.years;
@@ -115,6 +131,7 @@ export default function Home() {
     setError("");
     setResult(null);
     setChat([]);
+    setShowRawData(false);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -375,6 +392,7 @@ export default function Home() {
               style={{
                 display: "inline-block",
                 marginTop: 8,
+                marginRight: 16,
                 fontSize: 13,
                 color: "#0b5fa3",
                 textDecoration: "underline",
@@ -382,6 +400,52 @@ export default function Home() {
             >
               DART 공시 원문 보러가기 ↗
             </a>
+          )}
+          <button
+            onClick={() => setShowRawData((v) => !v)}
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              padding: "4px 10px",
+              borderRadius: 8,
+              border: "1px solid #ccc",
+              background: "#fff",
+              color: "#666",
+            }}
+          >
+            {showRawData ? "원본 데이터 숨기기" : "원본 데이터 보기 (검증용)"}
+          </button>
+
+          {showRawData && (
+            <div style={{ marginTop: 12 }}>
+              <button
+                onClick={copyRawDataForVerification}
+                style={{
+                  marginBottom: 8,
+                  fontSize: 12,
+                  padding: "4px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #ccc",
+                  background: rawCopied ? "#111" : "#fff",
+                  color: rawCopied ? "#fff" : "#111",
+                }}
+              >
+                {rawCopied ? "복사됨!" : "이 원본 데이터 전체 복사하기"}
+              </button>
+              <pre
+                style={{
+                  background: "#f7f7f7",
+                  padding: 12,
+                  borderRadius: 8,
+                  fontSize: 11,
+                  overflowX: "auto",
+                  maxHeight: 300,
+                  overflowY: "auto",
+                }}
+              >
+                {JSON.stringify(result.rawEmployeeByYear, null, 2)}
+              </pre>
+            </div>
           )}
         </div>
       )}

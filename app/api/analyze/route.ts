@@ -80,6 +80,13 @@ export async function POST(req: NextRequest) {
 
     const analysis = response.text ?? "";
 
+    // 검증용: 각 연도의 직원현황 원본 데이터를 그대로 같이 보냅니다.
+    // (화면의 "원본 데이터 보기"에서 복사해서 확인할 수 있습니다)
+    const rawEmployeeByYear: Record<string, any[]> = {};
+    for (const d of perYearData) {
+      rawEmployeeByYear[d.year] = d.employee;
+    }
+
     return NextResponse.json({
       corpName,
       years,
@@ -88,6 +95,7 @@ export async function POST(req: NextRequest) {
       metricsByYear,
       analysis,
       reportUrl,
+      rawEmployeeByYear,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "알 수 없는 오류" }, { status: 500 });

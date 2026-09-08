@@ -90,6 +90,15 @@ type EmployeeAggregate = {
   avgTenure: string | null; // "12.5" 같은 문자열
 };
 
+// 연간급여총액/1인평균급여액 필드는 회사·연도에 따라 "백만원" 단위의 작은 정수로 오기도 하고,
+// 이미 "원" 단위의 큰 숫자로 오기도 합니다(공시 형식이 통일돼있지 않음). 값의 크기로 자동 판별해서,
+// 10억 미만이면 "백만원 단위"로 보고 100만을 곱하고, 이미 10억 이상이면 "이미 원 단위"로 보고 그대로 둡니다.
+// (실제 회사 급여총액이 10억원 밑으로 내려가는 경우는 사실상 없어서 이 기준으로 안전하게 구분됩니다)
+function normalizeWonAmount(raw: number): number {
+  if (!raw) return 0;
+  return Math.abs(raw) < 1_000_000_000 ? raw * 1_000_000 : raw;
+}
+
 // 여러 행(부서/성별)을 하나로 합칠 때 쓰는 함수.
 // 인원수, 급여총액은 단순 합산하면 되지만, 근속연수·1인평균급여처럼 "평균"인 값은
 // 그냥 더하면 틀리기 때문에 인원수(sm)로 가중평균을 냅니다.
@@ -97,8 +106,8 @@ function aggregateRows(rows: any[]): EmployeeAggregate {
   const totalEmployees = rows.reduce((s, e) => s + toNumber(e.sm), 0) || null;
   const regularCount = rows.reduce((s, e) => s + toNumber(e.rgllbr_co), 0) || null;
   const contractCount = rows.reduce((s, e) => s + toNumber(e.cnttk_co), 0) || null;
-  const salarySumManwon = rows.reduce((s, e) => s + toNumber(e.fyer_salary_totamt), 0);
-  const totalSalaryWon = salarySumManwon ? salarySumManwon * 1_000_000 : null;
+  const salarySumRaw = rows.reduce((s, e) => s + toNumber(e.fyer_salary_totamt), 0);
+  const totalSalaryWon = salarySumRaw ? normalizeWonAmount(salarySumRaw) : null;
 
   let tenureNum = 0;
   let tenureDen = 0;
@@ -111,14 +120,14 @@ function aggregateRows(rows: any[]): EmployeeAggregate {
       tenureNum += tenure * w;
       tenureDen += w;
     }
-    const salaryAvg = toNumber(e.jan_salary_am);
-    if (salaryAvg && w) {
-      salaryFieldNum += salaryAvg * w;
+    const salaryAvgRaw = toNumber(e.jan_salary_am);
+    if (salaryAvgRaw && w) {
+      salaryFieldNum += normalizeWonAmount(salaryAvgRaw) * w;
       salaryFieldDen += w;
     }
   }
   const avgTenure = tenureDen ? (tenureNum / tenureDen).toFixed(1) : null;
-  const avgSalaryFieldWon = salaryFieldDen ? Math.round(salaryFieldNum / salaryFieldDen) * 1_000_000 : null;
+  const avgSalaryFieldWon = salaryFieldDen ? Math.round(salaryFieldNum / salaryFieldDen) : null;
 
   return { totalEmployees, regularCount, contractCount, totalSalaryWon, avgSalaryFieldWon, avgTenure };
 }
@@ -128,8 +137,8 @@ function aggregateSingleRow(row: any): EmployeeAggregate {
     totalEmployees: toNumber(row.sm) || null,
     regularCount: toNumber(row.rgllbr_co) || null,
     contractCount: toNumber(row.cnttk_co) || null,
-    totalSalaryWon: toNumber(row.fyer_salary_totamt) * 1_000_000 || null,
-    avgSalaryFieldWon: toNumber(row.jan_salary_am) * 1_000_000 || null,
+    totalSalaryWon: normalizeWonAmount(toNumber(row.fyer_salary_totamt)) || null,
+    avgSalaryFieldWon: normalizeWonAmount(toNumber(row.jan_salary_am)) || null,
     avgTenure: row.avrg_cnwk_sdytrn ? String(row.avrg_cnwk_sdytrn).trim() : null,
   };
 }
