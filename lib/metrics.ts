@@ -78,6 +78,15 @@ function formatWonRoundedToChunman(n: number | null): Metric {
   return metricValue(formatWonCompact(rounded), formatWonExact(n));
 }
 
+// 등기임원보수총액처럼, 회사마다 원본 공시 정밀도가 제각각(어떤 회사는 백만원 단위로
+// 반올림해서 신고, 어떤 회사는 원 단위까지 정확히 신고)이라 표시가 들쭉날쭉해 보이는 값은
+// "만원" 단위로 반올림해서 통일감 있게 보여줍니다.
+function formatWonRoundedToMan(n: number | null): Metric {
+  if (n === null) return null;
+  const rounded = Math.round(n / 10_000) * 10_000;
+  return metricValue(formatWonCompact(rounded), formatWonExact(n));
+}
+
 // 명/% 등 이미 짧은 값은 display와 exact가 같습니다.
 function formatSimple(s: string | null): Metric {
   return metricValue(s, s);
@@ -193,10 +202,14 @@ function findOperatingProfitItem(financials: any[]) {
 
 // OpenDART 응답의 필드명은 보고서마다 표기가 조금씩 다를 수 있습니다.
 // 실제 응답을 한 번 콘솔에 찍어보고 아래 필드명이 다르면 맞춰서 수정하세요.
+//
+// financialsOFS: 별도재무제표(본사 개별) - 직원현황도 원래 본사 개별 기준이라 이쪽을 기본으로 씁니다.
+// financialsCFS: 연결재무제표(자회사 포함 그룹 전체) - 참고용으로 표 맨 아래에 작게 같이 보여줍니다.
 export function computeMetrics(
   employee: any[],
   execComp: any[],
-  financials: any[]
+  financialsOFS: any[],
+  financialsCFS: any[] = []
 ) {
   const agg = pickEmployeeAggregate(employee);
 
@@ -209,18 +222,29 @@ export function computeMetrics(
   const avgSalaryWon =
     totalEmployees && totalSalaryWon ? Math.round(totalSalaryWon / totalEmployees) : null;
 
-  const revenueItem = findRevenueItem(financials);
+  const revenueItem = findRevenueItem(financialsOFS);
   const revenue = revenueItem ? toNumber(revenueItem.thstrm_amount) : null;
   const revenueAccountName = revenueItem ? revenueItem.account_nm : null;
 
-  const operatingProfitItem = findOperatingProfitItem(financials);
+  const operatingProfitItem = findOperatingProfitItem(financialsOFS);
   const operatingProfitRaw = operatingProfitItem ? toNumber(operatingProfitItem.thstrm_amount) : null;
-  // 계정명이 "영업손실"이면 적자를 뜻하므로, 표시할 때 음수로 바꿔줍니다.
   const operatingProfit =
     operatingProfitRaw !== null && operatingProfitItem?.account_nm?.includes("손실") && operatingProfitRaw > 0
       ? -operatingProfitRaw
       : operatingProfitRaw;
   const operatingProfitAccountName = operatingProfitItem ? operatingProfitItem.account_nm : null;
+
+  // 연결(그룹 전체) 기준 참고용 수치 - 표 맨 아래에 작게 같이 표시합니다.
+  const revenueItemCFS = findRevenueItem(financialsCFS);
+  const revenueCFS = revenueItemCFS ? toNumber(revenueItemCFS.thstrm_amount) : null;
+  const operatingProfitItemCFS = findOperatingProfitItem(financialsCFS);
+  const operatingProfitRawCFS = operatingProfitItemCFS ? toNumber(operatingProfitItemCFS.thstrm_amount) : null;
+  const operatingProfitCFS =
+    operatingProfitRawCFS !== null &&
+    operatingProfitItemCFS?.account_nm?.includes("손실") &&
+    operatingProfitRawCFS > 0
+      ? -operatingProfitRawCFS
+      : operatingProfitRawCFS;
 
   // 주의: 이 API(hmvAuditAllSttus)의 정확한 필드명을 아직 실제 응답으로 검증하지 못했습니다.
   // 자주 쓰이는 후보 필드명 여러 개를 시도하도록 방어적으로 짜뒀지만, 실제 값이 계속 "-"로
@@ -232,6 +256,7 @@ export function computeMetrics(
     0
   );
 
+  // 인건비/매출 비중은 직원현황(본사 개별)과 기준을 맞추기 위해 매출액도 별도 기준을 씁니다.
   const laborCostRatio =
     revenue && totalSalaryWon ? +((totalSalaryWon / revenue) * 100).toFixed(2) : null;
 
@@ -242,11 +267,13 @@ export function computeMetrics(
     평균근속연수: formatSimple(avgTenure ? `${avgTenure}년` : null),
     "1인평균급여": formatWonRoundedToChunman(avgSalaryWon),
     연간급여총액: formatWonRoundedToChunman(totalSalaryWon),
-    매출액: formatWonEokOnly(revenue),
-    "매출액 산출 근거 계정명": formatSimple(revenueAccountName),
-    영업이익: formatWonEokOnly(operatingProfit),
-    "영업이익 산출 근거 계정명": formatSimple(operatingProfitAccountName),
+    "매출액(별도)": formatWonEokOnly(revenue),
+    "매출액(별도) 산출 근거 계정명": formatSimple(revenueAccountName),
+    "영업이익(별도)": formatWonEokOnly(operatingProfit),
+    "영업이익(별도) 산출 근거 계정명": formatSimple(operatingProfitAccountName),
     "인건비/매출 비중": formatSimple(laborCostRatio === null ? null : `${laborCostRatio}%`),
-    등기임원보수총액: formatWon(execTotalComp || null),
+    등기임원보수총액: formatWonRoundedToMan(execTotalComp || null),
+    "매출액(연결) 참고": formatWonEokOnly(revenueCFS),
+    "영업이익(연결) 참고": formatWonEokOnly(operatingProfitCFS),
   };
 }

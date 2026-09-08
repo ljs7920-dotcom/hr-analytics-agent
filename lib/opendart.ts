@@ -53,11 +53,17 @@ export async function getExecutiveComp(corp_code: string, year: string, reprt_co
 }
 
 // 단일회사 전체 재무제표 (매출액, 영업이익 등)
-export async function getFinancials(corp_code: string, year: string, reprt_code: string = "11011") {
+// fs_div: "OFS"=별도재무제표(본사 개별), "CFS"=연결재무제표(자회사 포함 그룹 전체)
+export async function getFinancials(
+  corp_code: string,
+  year: string,
+  reprt_code: string = "11011",
+  fs_div: "OFS" | "CFS" = "OFS"
+) {
   return dartGet("fnlttSinglAcntAll.json", {
     corp_code,
     bsns_year: year,
     reprt_code,
-    fs_div: "CFS",
+    fs_div,
   });
 }

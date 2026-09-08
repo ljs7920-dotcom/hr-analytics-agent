@@ -31,24 +31,28 @@ export async function POST(req: NextRequest) {
 
     const perYearData = await Promise.all(
       years.map(async (y) => {
-        const [employee, execComp, financials] = await Promise.all([
+        const [employee, execComp, financialsOFS, financialsCFS] = await Promise.all([
           getEmployeeStatus(corpCode, y, reprtCode),
           getExecutiveComp(corpCode, y, reprtCode),
-          getFinancials(corpCode, y, reprtCode),
+          getFinancials(corpCode, y, reprtCode, "OFS"),
+          getFinancials(corpCode, y, reprtCode, "CFS"),
         ]);
-        return { year: y, employee, execComp, financials };
+        return { year: y, employee, execComp, financialsOFS, financialsCFS };
       })
     );
 
     const metricsByYear: Record<string, ReturnType<typeof computeMetrics>> = {};
     for (const d of perYearData) {
-      metricsByYear[d.year] = computeMetrics(d.employee, d.execComp, d.financials);
+      metricsByYear[d.year] = computeMetrics(d.employee, d.execComp, d.financialsOFS, d.financialsCFS);
     }
 
     // 공시 원문 링크는 가장 최근(선택한) 연도 기준으로 만듭니다.
     const latest = perYearData[perYearData.length - 1];
     const rceptNo =
-      latest.employee[0]?.rcept_no || latest.financials[0]?.rcept_no || latest.execComp[0]?.rcept_no || null;
+      latest.employee[0]?.rcept_no ||
+      latest.financialsOFS[0]?.rcept_no ||
+      latest.execComp[0]?.rcept_no ||
+      null;
     const reportUrl = rceptNo ? `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rceptNo}` : null;
 
     // AI에게는 화면 표시용 요약형이 아니라 "정확한 숫자(exact)"만 추려서 전달합니다.

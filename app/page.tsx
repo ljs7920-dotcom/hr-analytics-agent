@@ -331,20 +331,24 @@ export default function Home() {
               </tr>
             </thead>
             <tbody>
-              {metricNames.map((name) => {
+              {metricNames.map((name, idx) => {
                 const isAccountNameRow = name.includes("산출 근거 계정명");
+                const isReferenceRow = name.includes("(연결) 참고");
+                const isFirstReferenceRow = isReferenceRow && !metricNames[idx - 1]?.includes("(연결) 참고");
                 return (
                   <tr key={name}>
                     <td
                       style={{
                         padding: "4px 6px 4px 0",
-                        color: "#666",
+                        color: isReferenceRow ? "#aaa" : "#666",
                         position: "sticky",
                         left: 0,
                         background: "#fff",
                         whiteSpace: "nowrap",
                         borderBottom: "1px solid #eee",
+                        borderTop: isFirstReferenceRow ? "1px solid #ddd" : undefined,
                         fontStyle: isAccountNameRow ? "italic" : "normal",
+                        fontSize: isReferenceRow ? 11 : 13,
                       }}
                     >
                       {name}
@@ -357,14 +361,15 @@ export default function Home() {
                           title={v ? `정확한 값: ${v.exact}` : undefined}
                           style={{
                             padding: "4px 0",
-                            fontWeight: isAccountNameRow ? 400 : 600,
+                            fontWeight: isAccountNameRow || isReferenceRow ? 400 : 600,
                             fontStyle: isAccountNameRow ? "italic" : "normal",
-                            color: isAccountNameRow ? "#888" : "#111",
-                            fontSize: isAccountNameRow ? 12 : 13,
+                            color: isReferenceRow ? "#aaa" : isAccountNameRow ? "#888" : "#111",
+                            fontSize: isReferenceRow ? 11 : isAccountNameRow ? 12 : 13,
                             textAlign: "right",
                             whiteSpace: "nowrap",
                             cursor: v ? "help" : "default",
                             borderBottom: "1px solid #eee",
+                            borderTop: isFirstReferenceRow ? "1px solid #ddd" : undefined,
                             textDecoration: v ? "underline dotted" : "none",
                             textUnderlineOffset: "3px",
                           }}
