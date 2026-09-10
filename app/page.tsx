@@ -27,7 +27,6 @@ const btnActive: React.CSSProperties = {
 };
 
 // AI 응답에 섞여있는 "**굵게**" 마크다운 문법을 실제 볼드체로 바꿔서 보여줍니다.
-// (그대로 두면 별표(**)가 글자로 그대로 노출돼서 지저분해 보입니다)
 function renderWithBold(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) => {
@@ -38,42 +37,252 @@ function renderWithBold(text: string) {
   });
 }
 
+// 회사 하나의 결과 카드(표 + 분석 + 원문 링크 + 원본 데이터 보기)를 그려주는 컴포넌트.
+// 비교 모드에서는 이 카드가 2개(A, B) 나란히 쓰입니다.
+function ResultCard({ result, badgeLabel }: { result: any; badgeLabel?: string }) {
+  const [copied, setCopied] = useState(false);
+  const [showRawData, setShowRawData] = useState(false);
+  const [rawCopied, setRawCopied] = useState(false);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (tableScrollRef.current) tableScrollRef.current.scrollLeft = 0;
+  }, [result]);
+
+  const years: string[] = result?.years || [];
+  const metricNames = result ? Object.keys(result.metricsByYear[years[0]]) : [];
+
+  async function copyMetricsForExcel() {
+    if (!result) return;
+    const header = ["지표", ...years.map((y) => `${y}년`)];
+    const rows = metricNames.map((name) => [
+      name,
+      ...years.map((y) => {
+        const v = result.metricsByYear[y][name];
+        return v === null ? "-" : v.exact;
+      }),
+    ]);
+    const tsv = [["기업명", result.corpName], ["보고서 종류", result.reportLabel], [], header, ...rows]
+      .map((row) => row.join("\t"))
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(tsv);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // 조용히 무시 (엑셀 복사는 부가 기능)
+    }
+  }
+
+  async function copyRawDataForVerification() {
+    if (!result) return;
+    const text =
+      `기업명: ${result.corpName}\n연도: ${result.years.join(", ")}\n\n` +
+      JSON.stringify(result.rawEmployeeByYear, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      setRawCopied(true);
+      setTimeout(() => setRawCopied(false), 2000);
+    } catch {
+      // 무시
+    }
+  }
+
+  if (!result) return null;
+
+  return (
+    <div style={{ background: "#fff", padding: 20, borderRadius: 12, marginBottom: 20 }}>
+      {badgeLabel && (
+        <p style={{ fontSize: 12, fontWeight: 600, color: "#0b5fa3", margin: "0 0 8px" }}>{badgeLabel}</p>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 style={{ margin: 0, fontSize: 16 }}>
+          {result.corpName} · {years.length > 1 ? `${years[0]}~${years[years.length - 1]}` : years[0]}년 · {result.reportLabel}
+        </h3>
+        <button
+          onClick={copyMetricsForExcel}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 8,
+            border: "1px solid #ccc",
+            background: copied ? "#111" : "#fff",
+            color: copied ? "#fff" : "#111",
+            fontSize: 13,
+          }}
+        >
+          {copied ? "복사됨!" : "엑셀로 복사하기"}
+        </button>
+      </div>
+
+      <div style={{ overflowX: "auto" }} ref={tableScrollRef}>
+        <table style={{ width: "100%", borderCollapse: "collapse", margin: "12px 0", fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th
+                style={{
+                  textAlign: "left",
+                  padding: "4px 6px 4px 0",
+                  color: "#888",
+                  fontWeight: 400,
+                  fontSize: 11,
+                  position: "sticky",
+                  left: 0,
+                  background: "#fff",
+                  borderBottom: "1px solid #ddd",
+                }}
+              >
+                지표
+              </th>
+              {years.map((y) => (
+                <th
+                  key={y}
+                  style={{
+                    textAlign: "right",
+                    padding: "4px 0",
+                    color: "#888",
+                    fontWeight: 400,
+                    fontSize: 11,
+                    whiteSpace: "nowrap",
+                    borderBottom: "1px solid #ddd",
+                  }}
+                >
+                  {y}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {metricNames.map((name, idx) => {
+              const isAccountNameRow = name.includes("산출 근거 계정명");
+              const isReferenceRow = name.includes("(연결) 참고");
+              const isFirstReferenceRow = isReferenceRow && !metricNames[idx - 1]?.includes("(연결) 참고");
+              return (
+                <tr key={name}>
+                  <td
+                    style={{
+                      padding: "4px 6px 4px 0",
+                      color: isReferenceRow ? "#aaa" : "#666",
+                      position: "sticky",
+                      left: 0,
+                      background: "#fff",
+                      whiteSpace: "nowrap",
+                      borderBottom: "1px solid #eee",
+                      borderTop: isFirstReferenceRow ? "1px solid #ddd" : undefined,
+                      fontStyle: isAccountNameRow ? "italic" : "normal",
+                      fontSize: isReferenceRow ? 11 : 13,
+                    }}
+                  >
+                    {name}
+                  </td>
+                  {years.map((y) => {
+                    const v = result.metricsByYear[y][name];
+                    return (
+                      <td
+                        key={y}
+                        title={v ? `정확한 값: ${v.exact}` : undefined}
+                        style={{
+                          padding: "4px 0",
+                          fontWeight: isAccountNameRow || isReferenceRow ? 400 : 600,
+                          fontStyle: isAccountNameRow ? "italic" : "normal",
+                          color: isReferenceRow ? "#aaa" : isAccountNameRow ? "#888" : "#111",
+                          fontSize: isReferenceRow ? 11 : isAccountNameRow ? 12 : 13,
+                          textAlign: "right",
+                          whiteSpace: "nowrap",
+                          cursor: v ? heartCursor : "default",
+                          borderBottom: "1px solid #eee",
+                          borderTop: isFirstReferenceRow ? "1px solid #ddd" : undefined,
+                          textDecoration: v ? "underline dotted" : "none",
+                          textUnderlineOffset: "3px",
+                        }}
+                      >
+                        {v === null ? "-" : v.display}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p style={{ fontSize: 11, color: "#999", margin: "0 0 12px" }}>
+        금액 위에 마우스를 올리면 정확한 숫자가 표시됩니다. (점선 밑줄이 있는 값)
+        <br />
+        ※ 1인평균급여는 연간급여총액 ÷ 총직원수로 계산한 값이라, 공시상 "평균 재직자 수" 기준의 공식 수치와 1~3% 정도 차이가 있을 수 있습니다.
+        <br />
+        ※ 평균근속연수는 성별 소계를 가중평균한 값이라, 반올림 특성상 공시 원본과 ±0.1년 정도 차이가 날 수 있습니다.
+      </p>
+
+      <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14 }}>{renderWithBold(result.analysis)}</p>
+      {result.reportUrl && (
+        <a
+          href={result.reportUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ display: "inline-block", marginTop: 8, marginRight: 16, fontSize: 13, color: "#0b5fa3", textDecoration: "underline" }}
+        >
+          DART 공시 원문 보러가기 ↗
+        </a>
+      )}
+      <button
+        onClick={() => setShowRawData((v) => !v)}
+        style={{ marginTop: 8, fontSize: 12, padding: "4px 10px", borderRadius: 8, border: "1px solid #ccc", background: "#fff", color: "#666" }}
+      >
+        {showRawData ? "원본 데이터 숨기기" : "원본 데이터 보기 (검증용)"}
+      </button>
+
+      {showRawData && (
+        <div style={{ marginTop: 12 }}>
+          <button
+            onClick={copyRawDataForVerification}
+            style={{
+              marginBottom: 8,
+              fontSize: 12,
+              padding: "4px 10px",
+              borderRadius: 8,
+              border: "1px solid #ccc",
+              background: rawCopied ? "#111" : "#fff",
+              color: rawCopied ? "#fff" : "#111",
+            }}
+          >
+            {rawCopied ? "복사됨!" : "이 원본 데이터 전체 복사하기"}
+          </button>
+          <pre style={{ background: "#f7f7f7", padding: 12, borderRadius: 8, fontSize: 11, overflowX: "auto", maxHeight: 300, overflowY: "auto" }}>
+            {JSON.stringify(result.rawEmployeeByYear, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const [corpName, setCorpName] = useState("");
+  const [corpNameB, setCorpNameB] = useState("");
+  const [compareMode, setCompareMode] = useState(false);
   const [allNames, setAllNames] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionsB, setSuggestionsB] = useState<string[]>([]);
   const [year, setYear] = useState("");
   const [reportCategory, setReportCategory] = useState<ReportCategory>("annual");
   const [quarterCode, setQuarterCode] = useState<"11013" | "11014">("11013");
   const [yearsCount, setYearsCount] = useState(1);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [resultB, setResultB] = useState<any>(null);
+  const [comparison, setComparison] = useState<string>("");
+  const [comparisonLoading, setComparisonLoading] = useState(false);
   const [error, setError] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [question, setQuestion] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [showRawData, setShowRawData] = useState(false);
-  const [rawCopied, setRawCopied] = useState(false);
-  const tableScrollRef = useRef<HTMLDivElement>(null);
 
-  // 새 결과가 나오면 표의 가로 스크롤 위치를 항상 맨 왼쪽(지표 이름이 보이는 위치)으로 되돌립니다.
-  useEffect(() => {
-    if (result && tableScrollRef.current) {
-      tableScrollRef.current.scrollLeft = 0;
-    }
-  }, [result]);
-
-  // 사업보고서(연간)는 통상 다음 해 3월에 제출됩니다.
-  // 그래서 "최신으로 확인 가능한 사업보고서 연도"는 보통 작년이고,
-  // 아직 3월이 지나지 않은 1~2월에는 재작년 것까지만 확실히 나와있을 수 있습니다.
   useEffect(() => {
     const now = new Date();
     const latestAnnualYear = now.getMonth() < 2 ? now.getFullYear() - 2 : now.getFullYear() - 1;
     setYear(String(latestAnnualYear));
   }, []);
 
-  // 페이지가 열릴 때 회사 이름 전체 목록을 딱 한 번만 받아둡니다.
   useEffect(() => {
     fetch("/corp-names.json")
       .then((res) => res.json())
@@ -87,76 +296,63 @@ export default function Home() {
       setSuggestions([]);
       return;
     }
-    const q = value.trim();
-    const matches = allNames.filter((name) => name.includes(q)).slice(0, 10);
-    setSuggestions(matches);
+    setSuggestions(allNames.filter((n) => n.includes(value.trim())).slice(0, 10));
+  }
+
+  function handleCorpNameBChange(value: string) {
+    setCorpNameB(value);
+    if (value.trim().length === 0) {
+      setSuggestionsB([]);
+      return;
+    }
+    setSuggestionsB(allNames.filter((n) => n.includes(value.trim())).slice(0, 10));
   }
 
   const reprtCode = reportCategory === "annual" ? "11011" : reportCategory === "half" ? "11012" : quarterCode;
   const isValidCorpName = allNames.includes(corpName);
+  const isValidCorpNameB = allNames.includes(corpNameB);
+  const canAnalyze = compareMode ? isValidCorpName && isValidCorpNameB : isValidCorpName;
 
-  async function copyRawDataForVerification() {
-    if (!result) return;
-    const text =
-      `기업명: ${result.corpName}\n연도: ${result.years.join(", ")}\n\n` +
-      JSON.stringify(result.rawEmployeeByYear, null, 2);
-    try {
-      await navigator.clipboard.writeText(text);
-      setRawCopied(true);
-      setTimeout(() => setRawCopied(false), 2000);
-    } catch {
-      setError("복사에 실패했습니다. 브라우저 권한을 확인해주세요.");
-    }
-  }
-
-  async function copyMetricsForExcel() {
-    if (!result) return;
-    const years: string[] = result.years;
-    const metricNames = Object.keys(result.metricsByYear[years[0]]);
-
-    const header = ["지표", ...years.map((y) => `${y}년`)];
-    const rows = metricNames.map((name) => [
-      name,
-      ...years.map((y) => {
-        const v = result.metricsByYear[y][name];
-        return v === null ? "-" : v.exact;
-      }),
-    ]);
-
-    const tsv = [
-      ["기업명", result.corpName],
-      ["보고서 종류", result.reportLabel],
-      [],
-      header,
-      ...rows,
-    ]
-      .map((row) => row.join("\t"))
-      .join("\n");
-
-    try {
-      await navigator.clipboard.writeText(tsv);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setError("복사에 실패했습니다. 브라우저 권한을 확인해주세요.");
-    }
+  async function fetchAnalysis(name: string) {
+    const res = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ corpName: name, year, reprtCode, yearsCount }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
   }
 
   async function runAnalysis() {
     setLoading(true);
     setError("");
     setResult(null);
+    setResultB(null);
+    setComparison("");
     setChat([]);
-    setShowRawData(false);
     try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ corpName, year, reprtCode, yearsCount }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setResult(data);
+      if (compareMode) {
+        const [dataA, dataB] = await Promise.all([fetchAnalysis(corpName), fetchAnalysis(corpNameB)]);
+        setResult(dataA);
+        setResultB(dataB);
+
+        setComparisonLoading(true);
+        try {
+          const cmpRes = await fetch("/api/compare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ companyA: dataA, companyB: dataB }),
+          });
+          const cmpData = await cmpRes.json();
+          setComparison(cmpRes.ok ? cmpData.comparison : `(오류) ${cmpData.error}`);
+        } finally {
+          setComparisonLoading(false);
+        }
+      } else {
+        const data = await fetchAnalysis(corpName);
+        setResult(data);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -171,17 +367,15 @@ export default function Home() {
     setQuestion("");
     setChatLoading(true);
     try {
+      const context = compareMode ? { companyA: result, companyB: resultB, comparison } : result;
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newHistory, context: result }),
+        body: JSON.stringify({ messages: newHistory, context }),
       });
       const data = await res.json();
       if (!res.ok || !data.reply) {
-        setChat([
-          ...newHistory,
-          { role: "assistant", content: `(오류) ${data.error || "답변을 받지 못했습니다."}` },
-        ]);
+        setChat([...newHistory, { role: "assistant", content: `(오류) ${data.error || "답변을 받지 못했습니다."}` }]);
         return;
       }
       setChat([...newHistory, { role: "assistant", content: data.reply }]);
@@ -192,9 +386,6 @@ export default function Home() {
     }
   }
 
-  const years: string[] = result?.years || [];
-  const metricNames = result ? Object.keys(result.metricsByYear[years[0]]) : [];
-
   return (
     <main style={{ maxWidth: 920, margin: "0 auto", padding: "40px 20px" }}>
       <h1 style={{ fontSize: 22, marginBottom: 4 }}>HR Analytics Agent</h1>
@@ -203,7 +394,7 @@ export default function Home() {
       </p>
 
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 12, color: "#888", display: "block", marginBottom: 4 }}>기업명</label>
+        <label style={{ fontSize: 12, color: "#888", display: "block", marginBottom: 4 }}>기업명{compareMode ? " A" : ""}</label>
         <div style={{ display: "flex", gap: 8 }}>
           <input
             placeholder="기업명 (예: 삼성전자)"
@@ -227,10 +418,63 @@ export default function Home() {
         </div>
         {corpName.trim().length > 0 && !isValidCorpName && (
           <p style={{ fontSize: 12, color: "#c0392b", margin: "6px 0 0" }}>
-            자동완성 목록에 뜨는 회사명 중 하나를 정확히 선택해주세요. (직접 입력만으로는 분석할 수 없습니다)
+            자동완성 목록에 뜨는 회사명 중 하나를 정확히 선택해주세요.
           </p>
         )}
       </div>
+
+      {!compareMode ? (
+        <button
+          onClick={() => setCompareMode(true)}
+          style={{
+            marginBottom: 16,
+            fontSize: 13,
+            padding: "6px 12px",
+            borderRadius: 8,
+            border: "1px solid #0b5fa3",
+            background: "#eaf3fb",
+            color: "#0b5fa3",
+          }}
+        >
+          + 타 기업과 비교
+        </button>
+      ) : (
+        <div style={{ marginBottom: 16, background: "#f7f7f7", borderRadius: 8, padding: 12 }}>
+          <label style={{ fontSize: 12, color: "#888", display: "block", marginBottom: 4 }}>기업명 B (비교 대상)</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              placeholder="기업명 (예: 카카오)"
+              value={corpNameB}
+              onChange={(e) => handleCorpNameBChange(e.target.value)}
+              list="corp-name-suggestions-b"
+              autoComplete="off"
+              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
+            />
+            <datalist id="corp-name-suggestions-b">
+              {suggestionsB.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+            <button
+              onClick={() => {
+                setCompareMode(false);
+                setCorpNameB("");
+                setResultB(null);
+                setComparison("");
+              }}
+              style={{ padding: "0 14px", borderRadius: 8, border: "1px solid #ccc", background: "#fff" }}
+            >
+              취소
+            </button>
+          </div>
+          {corpNameB.trim().length > 0 && !isValidCorpNameB && (
+            <p style={{ fontSize: 12, color: "#c0392b", margin: "6px 0 0" }}>
+              자동완성 목록에 뜨는 회사명 중 하나를 정확히 선택해주세요.
+            </p>
+          )}
+          <p style={{ fontSize: 12, color: "#888", margin: "8px 0 0" }}>연도·보고서 종류·조회 연도 수는 두 기업에 동일하게 적용됩니다.</p>
+        </div>
+      )}
 
       <div style={{ marginBottom: 16 }}>
         <label style={{ fontSize: 12, color: "#888", display: "block", marginBottom: 6 }}>보고서 종류</label>
@@ -280,7 +524,7 @@ export default function Home() {
 
       <button
         onClick={runAnalysis}
-        disabled={loading || !isValidCorpName}
+        disabled={loading || !canAnalyze}
         style={{ width: "100%", padding: "12px 18px", borderRadius: 8, border: "none", background: "#111", color: "#fff", marginBottom: 20 }}
       >
         {loading ? "분석중..." : "분석하기"}
@@ -288,190 +532,26 @@ export default function Home() {
 
       {error && <p style={{ color: "crimson" }}>{error}</p>}
 
-      {result && (
-        <div style={{ background: "#fff", padding: 20, borderRadius: 12, marginBottom: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 style={{ margin: 0, fontSize: 16 }}>
-              {result.corpName} · {years.length > 1 ? `${years[0]}~${years[years.length - 1]}` : years[0]}년 · {result.reportLabel}
-            </h3>
-            <button
-              onClick={copyMetricsForExcel}
-              style={{
-                padding: "6px 12px",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-                background: copied ? "#111" : "#fff",
-                color: copied ? "#fff" : "#111",
-                fontSize: 13,
-              }}
-            >
-              {copied ? "복사됨!" : "엑셀로 복사하기"}
-            </button>
-          </div>
+      {result && compareMode && (
+        <p style={{ fontSize: 13, fontWeight: 600, color: "#666", margin: "0 0 4px" }}>① {result.corpName}</p>
+      )}
+      <ResultCard result={result} />
 
-          <div style={{ overflowX: "auto" }} ref={tableScrollRef}>
-          <table style={{ width: "100%", borderCollapse: "collapse", margin: "12px 0", fontSize: 13 }}>
-            <thead>
-              <tr>
-                <th
-                  style={{
-                    textAlign: "left",
-                    padding: "4px 6px 4px 0",
-                    color: "#888",
-                    fontWeight: 400,
-                    fontSize: 11,
-                    position: "sticky",
-                    left: 0,
-                    background: "#fff",
-                    borderBottom: "1px solid #ddd",
-                  }}
-                >
-                  지표
-                </th>
-                {years.map((y) => (
-                  <th
-                    key={y}
-                    style={{
-                      textAlign: "right",
-                      padding: "4px 0",
-                      color: "#888",
-                      fontWeight: 400,
-                      fontSize: 11,
-                      whiteSpace: "nowrap",
-                      borderBottom: "1px solid #ddd",
-                    }}
-                  >
-                    {y}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {metricNames.map((name, idx) => {
-                const isAccountNameRow = name.includes("산출 근거 계정명");
-                const isReferenceRow = name.includes("(연결) 참고");
-                const isFirstReferenceRow = isReferenceRow && !metricNames[idx - 1]?.includes("(연결) 참고");
-                return (
-                  <tr key={name}>
-                    <td
-                      style={{
-                        padding: "4px 6px 4px 0",
-                        color: isReferenceRow ? "#aaa" : "#666",
-                        position: "sticky",
-                        left: 0,
-                        background: "#fff",
-                        whiteSpace: "nowrap",
-                        borderBottom: "1px solid #eee",
-                        borderTop: isFirstReferenceRow ? "1px solid #ddd" : undefined,
-                        fontStyle: isAccountNameRow ? "italic" : "normal",
-                        fontSize: isReferenceRow ? 11 : 13,
-                      }}
-                    >
-                      {name}
-                    </td>
-                    {years.map((y) => {
-                      const v = result.metricsByYear[y][name];
-                      return (
-                        <td
-                          key={y}
-                          title={v ? `정확한 값: ${v.exact}` : undefined}
-                          style={{
-                            padding: "4px 0",
-                            fontWeight: isAccountNameRow || isReferenceRow ? 400 : 600,
-                            fontStyle: isAccountNameRow ? "italic" : "normal",
-                            color: isReferenceRow ? "#aaa" : isAccountNameRow ? "#888" : "#111",
-                            fontSize: isReferenceRow ? 11 : isAccountNameRow ? 12 : 13,
-                            textAlign: "right",
-                            whiteSpace: "nowrap",
-                            cursor: v ? heartCursor : "default",
-                            borderBottom: "1px solid #eee",
-                            borderTop: isFirstReferenceRow ? "1px solid #ddd" : undefined,
-                            textDecoration: v ? "underline dotted" : "none",
-                            textUnderlineOffset: "3px",
-                          }}
-                        >
-                          {v === null ? "-" : v.display}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
-          <p style={{ fontSize: 11, color: "#999", margin: "0 0 12px" }}>
-            금액 위에 마우스를 올리면 정확한 숫자가 표시됩니다. (점선 밑줄이 있는 값)
-            <br />
-            ※ 1인평균급여는 연간급여총액 ÷ 총직원수로 계산한 값이라, 공시상 "평균 재직자 수" 기준의 공식 수치와 1~3% 정도 차이가 있을 수 있습니다.
-            <br />
-            ※ 평균근속연수는 성별 소계를 가중평균한 값이라, 반올림 특성상 공시 원본과 ±0.1년 정도 차이가 날 수 있습니다.
+      {resultB && (
+        <>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#666", margin: "0 0 4px" }}>② {resultB.corpName}</p>
+          <ResultCard result={resultB} />
+        </>
+      )}
+
+      {(comparison || comparisonLoading) && (
+        <div style={{ background: "#eaf3fb", padding: 20, borderRadius: 12, marginBottom: 20 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "#0b5fa3", margin: "0 0 8px" }}>
+            {result?.corpName} vs {resultB?.corpName} 비교 분석
           </p>
-
-          <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14 }}>{renderWithBold(result.analysis)}</p>
-          {result.reportUrl && (
-            <a
-              href={result.reportUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "inline-block",
-                marginTop: 8,
-                marginRight: 16,
-                fontSize: 13,
-                color: "#0b5fa3",
-                textDecoration: "underline",
-              }}
-            >
-              DART 공시 원문 보러가기 ↗
-            </a>
-          )}
-          <button
-            onClick={() => setShowRawData((v) => !v)}
-            style={{
-              marginTop: 8,
-              fontSize: 12,
-              padding: "4px 10px",
-              borderRadius: 8,
-              border: "1px solid #ccc",
-              background: "#fff",
-              color: "#666",
-            }}
-          >
-            {showRawData ? "원본 데이터 숨기기" : "원본 데이터 보기 (검증용)"}
-          </button>
-
-          {showRawData && (
-            <div style={{ marginTop: 12 }}>
-              <button
-                onClick={copyRawDataForVerification}
-                style={{
-                  marginBottom: 8,
-                  fontSize: 12,
-                  padding: "4px 10px",
-                  borderRadius: 8,
-                  border: "1px solid #ccc",
-                  background: rawCopied ? "#111" : "#fff",
-                  color: rawCopied ? "#fff" : "#111",
-                }}
-              >
-                {rawCopied ? "복사됨!" : "이 원본 데이터 전체 복사하기"}
-              </button>
-              <pre
-                style={{
-                  background: "#f7f7f7",
-                  padding: 12,
-                  borderRadius: 8,
-                  fontSize: 11,
-                  overflowX: "auto",
-                  maxHeight: 300,
-                  overflowY: "auto",
-                }}
-              >
-                {JSON.stringify(result.rawEmployeeByYear, null, 2)}
-              </pre>
-            </div>
-          )}
+          <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14, color: "#0b5fa3", margin: 0 }}>
+            {comparisonLoading ? "비교 분석 작성 중..." : renderWithBold(comparison)}
+          </p>
         </div>
       )}
 
@@ -487,7 +567,7 @@ export default function Home() {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <input
-              placeholder={yearsCount > 1 ? "예: 가장 많이 늘어난 지표는?" : "예: 3개년으로 비교하려면 위에서 개수를 늘리고 다시 분석해줘"}
+              placeholder={compareMode ? "예: 두 회사 중 어디가 인건비 부담이 더 클까?" : "예: 5개년으로 비교하려면 위에서 개수를 늘리고 다시 분석해줘"}
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && askFollowUp()}
