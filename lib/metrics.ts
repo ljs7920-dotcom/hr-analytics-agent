@@ -1,7 +1,15 @@
 function toNumber(v: any): number {
   if (!v) return 0;
-  const n = parseInt(String(v).replace(/,/g, ""), 10);
-  return isNaN(n) ? 0 : n;
+  let s = String(v).trim().replace(/,/g, "");
+  // 회계에서는 마이너스를 괄호로 표기하기도 합니다: "(1,234,567)" -> -1234567
+  let negative = false;
+  if (s.startsWith("(") && s.endsWith(")")) {
+    negative = true;
+    s = s.slice(1, -1);
+  }
+  const n = parseInt(s, 10);
+  if (isNaN(n)) return 0;
+  return negative ? -n : n;
 }
 
 type Metric = { display: string; exact: string } | null;
@@ -226,25 +234,17 @@ export function computeMetrics(
   const revenue = revenueItem ? toNumber(revenueItem.thstrm_amount) : null;
   const revenueAccountName = revenueItem ? revenueItem.account_nm : null;
 
+  // "영업이익(손실)"은 흑자/적자 상관없이 공통으로 쓰는 계정명이라, 이름만 보고 부호를
+  // 뒤집으면 안 됩니다. OpenDART가 이미 정확한 부호(+/-)로 값을 내려주므로 그대로 씁니다.
   const operatingProfitItem = findOperatingProfitItem(financialsOFS);
-  const operatingProfitRaw = operatingProfitItem ? toNumber(operatingProfitItem.thstrm_amount) : null;
-  const operatingProfit =
-    operatingProfitRaw !== null && operatingProfitItem?.account_nm?.includes("손실") && operatingProfitRaw > 0
-      ? -operatingProfitRaw
-      : operatingProfitRaw;
+  const operatingProfit = operatingProfitItem ? toNumber(operatingProfitItem.thstrm_amount) : null;
   const operatingProfitAccountName = operatingProfitItem ? operatingProfitItem.account_nm : null;
 
   // 연결(그룹 전체) 기준 참고용 수치 - 표 맨 아래에 작게 같이 표시합니다.
   const revenueItemCFS = findRevenueItem(financialsCFS);
   const revenueCFS = revenueItemCFS ? toNumber(revenueItemCFS.thstrm_amount) : null;
   const operatingProfitItemCFS = findOperatingProfitItem(financialsCFS);
-  const operatingProfitRawCFS = operatingProfitItemCFS ? toNumber(operatingProfitItemCFS.thstrm_amount) : null;
-  const operatingProfitCFS =
-    operatingProfitRawCFS !== null &&
-    operatingProfitItemCFS?.account_nm?.includes("손실") &&
-    operatingProfitRawCFS > 0
-      ? -operatingProfitRawCFS
-      : operatingProfitRawCFS;
+  const operatingProfitCFS = operatingProfitItemCFS ? toNumber(operatingProfitItemCFS.thstrm_amount) : null;
 
   // 주의: 이 API(hmvAuditAllSttus)의 정확한 필드명을 아직 실제 응답으로 검증하지 못했습니다.
   // 자주 쓰이는 후보 필드명 여러 개를 시도하도록 방어적으로 짜뒀지만, 실제 값이 계속 "-"로
